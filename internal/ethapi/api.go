@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -651,6 +652,17 @@ func (s *PublicBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.B
 	return nil, err
 }
 
+// GetBalanceByHash returns the amount of wei for the given address in the state of the
+// given block hash. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
+// block numbers are also allowed.
+func (s *PublicBlockChainAPI) GetBalanceByHash(ctx context.Context, address common.Address, blockHash common.Hash) (*hexutil.Big, error) {
+	state, _, err := s.b.StateAndHeaderByHash(ctx, blockHash)
+	if state == nil || err != nil {
+		return nil, err
+	}
+	return (*hexutil.Big)(state.GetBalance(address)), state.Error()
+}
+
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
 // detail, otherwise only the transaction hash is returned.
 func (s *PublicBlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
@@ -764,6 +776,24 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNr rpc.BlockNumb
 	if state == nil || err != nil {
 		return nil, 0, false, err
 	}
+
+	return call(ctx, state, header, b, args, overrides, vmCfg, timeout, globalGasCap)
+}
+
+func DoCallByHash(ctx context.Context, b Backend, args CallArgs, blockHash common.Hash, overrides map[common.Address]account, vmCfg vm.Config, timeout time.Duration, globalGasCap *big.Int) ([]byte, uint64, bool, error) {
+	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
+
+	state, header, err := b.StateAndHeaderByHash(ctx, blockHash)
+	if state == nil || err != nil {
+		return nil, 0, false, err
+	}
+
+	return call(ctx, state, header, b, args, overrides, vmCfg, timeout, globalGasCap)
+}
+
+func call(ctx context.Context, state *state.StateDB, header *types.Header, b Backend, args CallArgs, overrides map[common.Address]account, vmCfg vm.Config, timeout time.Duration, globalGasCap *big.Int) ([]byte, uint64, bool, error) {
+	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
+
 	// Set sender address or use a default if none specified
 	var addr common.Address
 	if args.From == nil {
@@ -880,6 +910,21 @@ func (s *PublicBlockChainAPI) Call(ctx context.Context, args CallArgs, blockNr r
 		accounts = *overrides
 	}
 	result, _, _, err := DoCall(ctx, s.b, args, blockNr, accounts, vm.Config{}, 5*time.Second, s.b.RPCGasCap())
+	return (hexutil.Bytes)(result), err
+}
+
+// Call executes the given transaction on the state for the given block number.
+//
+// Additionally, the caller can specify a batch of contract for fields overriding.
+//
+// Note, this function doesn't make and changes in the state/blockchain and is
+// useful to execute and retrieve values.
+func (s *PublicBlockChainAPI) CallByHash(ctx context.Context, args CallArgs, blockHash common.Hash, overrides *map[common.Address]account) (hexutil.Bytes, error) {
+	var accounts map[common.Address]account
+	if overrides != nil {
+		accounts = *overrides
+	}
+	result, _, _, err := DoCallByHash(ctx, s.b, args, blockHash, accounts, vm.Config{}, 5*time.Second, s.b.RPCGasCap())
 	return (hexutil.Bytes)(result), err
 }
 

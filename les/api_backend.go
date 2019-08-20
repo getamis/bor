@@ -92,6 +92,14 @@ func (b *LesApiBackend) StateAndHeaderByNumber(ctx context.Context, number rpc.B
 	return light.NewState(ctx, header, b.eth.odr), header, nil
 }
 
+func (b *LesApiBackend) StateAndHeaderByHash(ctx context.Context, blockHash common.Hash) (*state.StateDB, *types.Header, error) {
+	header, err := b.HeaderByHash(ctx, blockHash)
+	if header == nil || err != nil {
+		return nil, nil, err
+	}
+	return light.NewState(ctx, header, b.eth.odr), header, nil
+}
+
 func (b *LesApiBackend) GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error) {
 	if number := rawdb.ReadHeaderNumber(b.eth.chainDb, hash); number != nil {
 		return light.GetBlockReceipts(ctx, b.eth.odr, hash, *number)
@@ -150,6 +158,10 @@ func (b *LesApiBackend) TxPoolContent() (map[common.Address]types.Transactions, 
 
 func (b *LesApiBackend) SubscribeNewTxsEvent(ch chan<- core.NewTxsEvent) event.Subscription {
 	return b.eth.txPool.SubscribeNewTxsEvent(ch)
+}
+
+func (b *LesApiBackend) SubscribeNewQueuedTxsEvent(ch chan<- core.NewQueuedTxsEvent) event.Subscription {
+	return b.eth.txPool.SubscribeNewQueuedTxsEvent(ch)
 }
 
 func (b *LesApiBackend) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subscription {
