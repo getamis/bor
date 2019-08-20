@@ -8,6 +8,7 @@
 .PHONY: geth-darwin geth-darwin-386 geth-darwin-amd64
 .PHONY: geth-windows geth-windows-386 geth-windows-amd64
 
+include main.mk
 GOBIN = ./build/bin
 GO ?= latest
 GORUN = env GO111MODULE=on go run
@@ -197,3 +198,10 @@ release:
 		-w /go/src/$(PACKAGE_NAME) \
 		ghcr.io/troian/golang-cross:${GOLANG_CROSS_VERSION} \
 		--rm-dist --skip-validate
+docker:
+	@docker build -f ./Dockerfile -t $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) .
+	@docker tag $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) $(DOCKER_IMAGE):latest
+
+docker.push:
+	@docker push $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG)
+	@docker push $(DOCKER_IMAGE):latest
