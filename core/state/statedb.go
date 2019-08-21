@@ -111,6 +111,9 @@ type StateDB struct {
 	SnapshotAccountReads time.Duration
 	SnapshotStorageReads time.Duration
 	SnapshotCommits      time.Duration
+
+	// transferLogs records trasfer logs for each transaction.
+	transferLogs map[common.Hash][]*types.TransferLog
 }
 
 // New creates a new state from a given trie.
@@ -128,6 +131,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		stateObjectsDirty:   make(map[common.Address]struct{}),
 		logs:                make(map[common.Hash][]*types.Log),
 		preimages:           make(map[common.Hash][]byte),
+		transferLogs:        make(map[common.Hash][]*types.TransferLog),
 		journal:             newJournal(),
 	}
 	if sdb.snaps != nil {
@@ -167,6 +171,7 @@ func (s *StateDB) Reset(root common.Hash) error {
 	s.txIndex = 0
 	s.logs = make(map[common.Hash][]*types.Log)
 	s.logSize = 0
+	s.transferLogs = make(map[common.Hash][]*types.TransferLog)
 	s.preimages = make(map[common.Hash][]byte)
 	s.clearJournalAndRefund()
 
@@ -199,6 +204,25 @@ func (s *StateDB) GetLogs(hash common.Hash) []*types.Log {
 func (s *StateDB) Logs() []*types.Log {
 	var logs []*types.Log
 	for _, lgs := range s.logs {
+		logs = append(logs, lgs...)
+	}
+	return logs
+}
+
+func (self *StateDB) AddTransferLog(transferLog *types.TransferLog) {
+	self.journal.append(addTransferLogChange{txhash: self.thash})
+
+	transferLog.TxHash = self.thash
+	self.transferLogs[self.thash] = append(self.transferLogs[self.thash], transferLog)
+}
+
+func (self *StateDB) GetTransferLogs(hash common.Hash) []*types.TransferLog {
+	return self.transferLogs[hash]
+}
+
+func (self *StateDB) TransferLogs() []*types.TransferLog {
+	var logs []*types.TransferLog
+	for _, lgs := range self.transferLogs {
 		logs = append(logs, lgs...)
 	}
 	return logs
@@ -653,6 +677,7 @@ func (s *StateDB) Copy() *StateDB {
 		logs:                make(map[common.Hash][]*types.Log, len(s.logs)),
 		logSize:             s.logSize,
 		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
+		transferLogs:        make(map[common.Hash][]*types.TransferLog),
 		journal:             newJournal(),
 	}
 	// Copy the dirty states, logs, and preimages
@@ -696,6 +721,10 @@ func (s *StateDB) Copy() *StateDB {
 	}
 	for hash, preimage := range s.preimages {
 		state.preimages[hash] = preimage
+	}
+	for hash, transferLogs := range s.transferLogs {
+		state.transferLogs[hash] = make([]*types.TransferLog, len(transferLogs))
+		copy(state.transferLogs[hash], transferLogs)
 	}
 	return state
 }
