@@ -52,17 +52,6 @@ jobs:
         - go run build/ci.go install
         - go run build/ci.go test -coverage $TEST_PACKAGES
 
-    - stage: build
-      if: type = pull_request
-      os: linux
-      arch: arm64
-      dist: xenial
-      go: 1.14.x
-      env:
-        - GO111MODULE=on
-      script:
-        - go run build/ci.go install
-        - go run build/ci.go test -coverage $TEST_PACKAGES
     - stage: Develop Release
       script:
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io/amis
