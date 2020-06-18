@@ -1237,7 +1237,10 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 				}
 				h := rawdb.ReadCanonicalHash(bc.db, frozen)
 				b := rawdb.ReadBlock(bc.db, h, frozen)
-				l := rawdb.ReadTransferLogs(bc.db, h, frozen)
+				l, err := rawdb.ReadTransferLogs(bc.db, h, frozen)
+				if err != nil {
+					return 0, err
+				}
 				size += rawdb.WriteAncientBlock(bc.db, b, rawdb.ReadReceipts(bc.db, h, frozen, bc.chainConfig), rawdb.ReadTd(bc.db, h, frozen), l)
 				count += 1
 
@@ -1282,7 +1285,6 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 			}
 			// Flush data into ancient database.
 			size += rawdb.WriteAncientBlock(bc.db, block, receiptChain[i], bc.GetTd(block.Hash(), block.NumberU64()), nil)
-			rawdb.WriteTxLookupEntriesByBlock(batch, block)
 
 			// Write tx indices if any condition is satisfied:
 			// * If user requires to reserve all tx indices(txlookuplimit=0)
