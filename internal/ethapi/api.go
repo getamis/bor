@@ -1579,9 +1579,12 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 	receipt := receipts[index]
 
-	// Derive the sender.
+	return ToTransactionReceipt(s.b.ChainConfig(), tx, receipt, blockHash, hash, blockNumber, index), nil
+}
+
+func ToTransactionReceipt(chainConfig *params.ChainConfig, tx *types.Transaction, receipt *types.Receipt, blockHash common.Hash, hash common.Hash, blockNumber uint64, index uint64) map[string]interface{} {
 	bigblock := new(big.Int).SetUint64(blockNumber)
-	signer := types.MakeSigner(s.b.ChainConfig(), bigblock)
+	signer := types.MakeSigner(chainConfig, bigblock)
 	from, _ := types.Sender(signer, tx)
 
 	fields := map[string]interface{}{
@@ -1612,7 +1615,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if receipt.ContractAddress != (common.Address{}) {
 		fields["contractAddress"] = receipt.ContractAddress
 	}
-	return fields, nil
+	return fields
 }
 
 // sign is a helper function that signs a transaction with the private key of the given address.
