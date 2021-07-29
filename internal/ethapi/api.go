@@ -1097,13 +1097,13 @@ func (s *BlockChainAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.
 
 	result := make([]map[string]interface{}, len(receipts))
 	for i, receipt := range receipts {
-		result[i] = marshalReceipt(receipt, block.Hash(), block.NumberU64(), signer, txs[i], i, false)
+		result[i] = MarshalReceipt(receipt, block.Hash(), block.NumberU64(), signer, txs[i], i, false)
 	}
 
 	stateSyncReceipt := rawdb.ReadBorReceipt(s.b.ChainDb(), block.Hash(), block.NumberU64(), s.b.ChainConfig())
 	if stateSyncReceipt != nil {
 		tx, _, _, _ := rawdb.ReadBorTransaction(s.b.ChainDb(), stateSyncReceipt.TxHash)
-		result = append(result, marshalReceipt(stateSyncReceipt, block.Hash(), block.NumberU64(), signer, tx, len(result), true))
+		result = append(result, MarshalReceipt(stateSyncReceipt, block.Hash(), block.NumberU64(), signer, tx, len(result), true))
 	}
 
 	return result, nil
@@ -2124,11 +2124,11 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 
 	// Derive the sender.
 	signer := types.MakeSigner(s.b.ChainConfig(), header.Number, header.Time)
-	return marshalReceipt(receipt, blockHash, blockNumber, signer, tx, int(index), borTx), nil
+	return MarshalReceipt(receipt, blockHash, blockNumber, signer, tx, int(index), borTx), nil
 }
 
 // marshalReceipt marshals a transaction receipt into a JSON object.
-func marshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber uint64, signer types.Signer, tx *types.Transaction, txIndex int, borTx bool) map[string]interface{} {
+func MarshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber uint64, signer types.Signer, tx *types.Transaction, txIndex int, borTx bool) map[string]interface{} {
 	from, _ := types.Sender(signer, tx)
 
 	var txHash common.Hash
