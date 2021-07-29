@@ -187,7 +187,7 @@ func ReadBorTxLookupEntry(db ethdb.Reader, txHash common.Hash) *uint64 {
 
 // WriteBorTxLookupEntry stores a positional metadata for bor transaction using block hash and block number
 func WriteBorTxLookupEntry(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
-	txHash := types.GetDerivedBorTxHash(borReceiptKey(number, hash))
+	txHash := getDerivedBorTxHash(borReceiptKey(number, hash))
 	if err := db.Put(borTxLookupKey(txHash), big.NewInt(0).SetUint64(number).Bytes()); err != nil {
 		log.Crit("Failed to store bor transaction lookup entry", "err", err)
 	}
@@ -195,7 +195,7 @@ func WriteBorTxLookupEntry(db ethdb.KeyValueWriter, hash common.Hash, number uin
 
 // DeleteBorTxLookupEntry removes bor transaction data associated with block hash and block number
 func DeleteBorTxLookupEntry(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
-	txHash := types.GetDerivedBorTxHash(borReceiptKey(number, hash))
+	txHash := getDerivedBorTxHash(borReceiptKey(number, hash))
 	DeleteBorTxLookupEntryByTxHash(db, txHash)
 }
 
