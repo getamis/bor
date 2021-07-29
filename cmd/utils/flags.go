@@ -1490,7 +1490,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		cfg.BorLogs = ctx.GlobalBool(BorLogsFlag.Name)
 	}
 
-  // Cap the cache allowance and tune the garbage collector
+	// Cap the cache allowance and tune the garbage collector
 	mem, err := gopsutil.VirtualMemory()
 	if err == nil {
 		if 32<<(^uintptr(0)>>63) == 32 && mem.Total > 2*1024*1024*1024 {
