@@ -2135,13 +2135,16 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 	// Derive the sender.
 	signer := types.MakeSigner(s.b.ChainConfig(), header.Number, header.Time)
 	from, _ := types.Sender(signer, tx)
+	return ToTransactionReceipt(ctx, s.b, tx, from, receipt, blockHash, hash, blockNumber, index)
+}
 
+func ToTransactionReceipt(ctx context.Context, b Backend, tx *types.Transaction, fromAddr common.Address, receipt *types.Receipt, blockHash common.Hash, hash common.Hash, blockNumber, index uint64) (map[string]interface{}, error) {
 	fields := map[string]interface{}{
 		"blockHash":         blockHash,
 		"blockNumber":       hexutil.Uint64(blockNumber),
 		"transactionHash":   hash,
 		"transactionIndex":  hexutil.Uint64(index),
-		"from":              from,
+		"from":              fromAddr,
 		"to":                tx.To(),
 		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
 		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
@@ -2151,11 +2154,9 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 		"type":              hexutil.Uint(tx.Type()),
 		"effectiveGasPrice": (*hexutil.Big)(receipt.EffectiveGasPrice),
 	}
-
 	if receipt.EffectiveGasPrice == nil {
 		fields["effectiveGasPrice"] = new(hexutil.Big)
 	}
-
 	// Assign receipt status or post state.
 	if len(receipt.PostState) > 0 {
 		fields["root"] = hexutil.Bytes(receipt.PostState)
