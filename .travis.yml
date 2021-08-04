@@ -23,16 +23,6 @@ jobs:
         submodules: false # avoid cloning ethereum/tests
       script:
         - go run build/ci.go lint
-    - stage: build
-      os: linux
-      arch: amd64
-      dist: bionic
-      go: 1.16.x
-      env:
-        - GO111MODULE=on
-      script:
-        - go run build/ci.go install
-        - go run build/ci.go test -coverage $TEST_PACKAGES
 
     - stage: Docker Image Release
       script:
