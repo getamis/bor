@@ -531,26 +531,31 @@ func (api *PrivateDebugAPI) getModifiedAccounts(startBlock, endBlock *types.Bloc
 
 // GetBlockReceipts returns all transaction receipts of the specified block.
 func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash) ([]map[string]interface{}, error) {
-	if receipts := api.eth.blockchain.GetReceiptsByHash(blockHash); receipts != nil {
-		if block := api.eth.blockchain.GetBlockByHash(blockHash); block != nil {
-			txs := block.Transactions()
-			if len(txs) != len(receipts) {
-				return nil, fmt.Errorf("txs length doesn't equal to receipts' length")
-			}
-
-			txReceipts := make([]map[string]interface{}, 0, len(txs))
-			blockNumber := block.Header().Number
-			for idx, receipt := range receipts {
-				tx := txs[idx]
-				fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, tx.Hash(), blockNumber.Uint64(), uint64(idx))
-				if err != nil {
-					return nil, err
-				}
-				txReceipts = append(txReceipts, fields)
-			}
-
-			return txReceipts, nil
-		}
+	block := api.eth.blockchain.GetBlockByHash(blockHash)
+	blockNumber := block.Header().Number
+	if block == nil {
+		return nil, errors.New("block not found")
 	}
-	return nil, errors.New("unknown receipts")
+	receipts := api.eth.blockchain.GetReceiptsByHash(blockHash)
+	if receipts == nil {
+		return nil, errors.New("receipts not found")
+	}
+	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64())
+	if receipt != nil {
+		receipts = append(receipts, receipt)
+	}
+	txs := block.Transactions()
+	if len(txs) != len(receipts) {
+		return nil, fmt.Errorf("txs length doesn't equal to receipts' length")
+	}
+	txReceipts := make([]map[string]interface{}, 0, len(txs))
+	for idx, receipt := range receipts {
+		tx := txs[idx]
+		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, tx.Hash(), blockNumber.Uint64(), uint64(idx))
+		if err != nil {
+			return nil, err
+		}
+		txReceipts = append(txReceipts, fields)
+	}
+	return txReceipts, nil
 }
