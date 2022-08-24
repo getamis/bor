@@ -1053,7 +1053,7 @@ func (t *freezerTable) dumpIndex(w io.Writer, start, stop int64) {
 func (t *freezerTable) Fill(number uint64) error {
 	if t.items.Load() < number {
 		b := t.newBatch()
-		log.Info("Filling all data into freezer for backward compatablity", "name", t.name, "items", t.items, "number", number)
+		log.Info("Filling all data into freezer for backward compatibility", "name", t.name, "items", t.items, "number", number)
 
 		for t.items.Load() < number {
 			if err := b.Append(t.items.Load(), nil); err != nil {
