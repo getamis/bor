@@ -17,10 +17,15 @@
 package eth
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 )
 
 // EthereumAPI provides an API to access Ethereum full node-related information.
@@ -78,7 +83,7 @@ func getFinalizedBlockNumber(eth *Ethereum) (uint64, error) {
 }
 
 // GetBlockReceipts returns all transaction receipts of the specified block.
-func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash) ([]map[string]interface{}, error) {
+func (api *DebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash) ([]map[string]interface{}, error) {
 	block := api.eth.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
 		return nil, errors.New("block not found")
@@ -97,26 +102,18 @@ func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash comm
 	}
 
 	txReceipts := make([]map[string]interface{}, 0, len(txs))
-
+	signer := types.MakeSigner(api.eth.APIBackend.ChainConfig(), blockNumber, block.Header().Time)
 	for idx, receipt := range receipts {
 		tx := txs[idx]
-		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, tx.Hash(), blockNumber.Uint64(), uint64(idx))
-
-		if err != nil {
-			return nil, err
-		}
+		fields := ethapi.MarshalReceipt(receipt, blockHash, blockNumber.Uint64(), signer, tx, idx, false)
 
 		txReceipts = append(txReceipts, fields)
 	}
 
-	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64())
+	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64(), api.eth.blockchain.Config())
 	if receipt != nil {
 		tx, _, _, _ := rawdb.ReadBorTransaction(api.eth.chainDb, receipt.TxHash)
-		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, receipt.TxHash, blockNumber.Uint64(), uint64(receipt.TransactionIndex))
-
-		if err != nil {
-			return nil, err
-		}
+		fields := ethapi.MarshalReceipt(receipt, blockHash, blockNumber.Uint64(), signer, tx, int(receipt.TransactionIndex), true)
 
 		txReceipts = append(txReceipts, fields)
 	}
