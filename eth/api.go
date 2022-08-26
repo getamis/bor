@@ -725,7 +725,7 @@ func getFinalizedBlockNumber(eth *Ethereum) (uint64, error) {
 }
 
 // GetBlockReceipts returns all transaction receipts of the specified block.
-func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash) ([]map[string]interface{}, error) {
+func (api *DebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash) ([]map[string]interface{}, error) {
 	block := api.eth.blockchain.GetBlockByHash(blockHash)
 	if block == nil {
 		return nil, errors.New("block not found")
@@ -756,7 +756,7 @@ func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash comm
 		txReceipts = append(txReceipts, fields)
 	}
 
-	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64())
+	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64(), api.eth.blockchain.Config())
 	if receipt != nil {
 		tx, _, _, _ := rawdb.ReadBorTransaction(api.eth.chainDb, receipt.TxHash)
 		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, receipt.TxHash, blockNumber.Uint64(), uint64(receipt.TransactionIndex))
