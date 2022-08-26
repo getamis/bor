@@ -75,6 +75,7 @@ var customGenesisTests = []struct {
 // Tests that initializing Geth with a custom genesis block and chain definitions
 // work properly.
 func TestCustomGenesis(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 
 	for i, tt := range customGenesisTests {
@@ -101,6 +102,7 @@ func TestCustomGenesis(t *testing.T) {
 
 // TestCustomBackend that the backend selection and detection (leveldb vs pebble) works properly.
 func TestCustomBackend(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 	// Test pebble, but only on 64-bit platforms
 	if strconv.IntSize != 64 {
