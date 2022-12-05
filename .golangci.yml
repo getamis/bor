@@ -14,43 +14,8 @@ run:
 
 linters:
   enable:
-    - goconst
-    - goimports
     - misspell
-    - unconvert
-    - bodyclose
-    - containedctx
-    - contextcheck
-    - decorder
-    - durationcheck
-    - errchkjson
-    - errname
-    - exhaustive
-    - exportloopref
-    - gocognit
-    - gofmt
-    # - gomnd
-    - gomoddirectives
-    - gosec
-    - makezero
-    - nestif
-    - nilerr
-    - nilnil
-    - noctx
-    #- nosprintfhostport # TODO: do we use IPv6?
-    - paralleltest
-    - prealloc
-    - predeclared
-    #- promlinter
-    #- revive
-    # - tagliatelle
-    - tenv
-    - thelper
-    - tparallel
-    - unconvert
-    - unparam
-    - wsl
-    #- errorlint causes stack overflow. TODO: recheck after each golangci update
+  disable-all: true
 
 linters-settings:
   gofmt:
@@ -167,6 +132,7 @@ issues:
         - unused
         - deadcode
         - gocritic
+        - errcheck
     - path: cmd/devp2p
       linters:
         - gosec
