@@ -2,12 +2,6 @@ language: go
 go_import_path: github.com/ethereum/go-ethereum
 sudo: false
 jobs:
-  allow_failures:
-    - stage: build
-      os: osx
-      env:
-        - azure-osx
-
   include:
     # This builder only tests code linters on latest version of Go
     - stage: lint
@@ -29,7 +23,7 @@ jobs:
         - GO111MODULE=on
       script:
         - go run build/ci.go install
-        - go run build/ci.go test -coverage $TEST_PACKAGES
+        - travis_wait go run build/ci.go test -coverage $TEST_PACKAGES
     - stage: Docker Image Release
       script:
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io/amis
