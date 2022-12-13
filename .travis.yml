@@ -5,7 +5,7 @@ jobs:
   allow_failures:
     - stage: build
       os: osx
-      go: 1.17.x
+      go: 1.19.x
       env:
         - azure-osx
         - azure-ios
@@ -16,7 +16,7 @@ jobs:
     - stage: lint
       os: linux
       dist: bionic
-      go: 1.18.x
+      go: 1.19.x
       env:
         - lint
       git:
@@ -27,12 +27,12 @@ jobs:
       os: linux
       arch: amd64
       dist: bionic
-      go: 1.18.x
+      go: 1.19.x
       env:
         - GO111MODULE=on
       script:
         - go run build/ci.go install
-        - go run build/ci.go test -coverage $TEST_PACKAGES
+        - travis_wait go run build/ci.go test -coverage $TEST_PACKAGES
     - stage: Docker Image Release
       script:
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io/amis
