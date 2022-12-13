@@ -850,12 +850,6 @@ func (s *PublicBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.B
 			}
 		}
 
-		if err == nil && number != rpc.PendingBlockNumber {
-			author := s.getAuthor(block.Header())
-
-			response["miner"] = author
-		}
-
 		// append marshalled bor transaction
 		if err == nil && response != nil {
 			response = s.appendRPCMarshalBorTransaction(ctx, block, response, fullTx)
@@ -874,10 +868,6 @@ func (s *PublicBlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Ha
 		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
 		// append marshalled bor transaction
 		if err == nil && response != nil {
-			author := s.getAuthor(block.Header())
-
-			response["miner"] = author
-
 			return s.appendRPCMarshalBorTransaction(ctx, block, response, fullTx), err
 		}
 		return response, err
