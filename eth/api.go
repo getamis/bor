@@ -641,7 +641,7 @@ func (api *PrivateDebugAPI) GetBlockReceipts(ctx context.Context, blockHash comm
 		txReceipts = append(txReceipts, fields)
 	}
 
-	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64())
+	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64(), api.eth.blockchain.Config())
 	if receipt != nil {
 		tx, _, _, _ := rawdb.ReadBorTransaction(api.eth.chainDb, receipt.TxHash)
 		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, receipt, blockHash, receipt.TxHash, blockNumber.Uint64(), uint64(receipt.TransactionIndex))
