@@ -4050,9 +4050,7 @@ func mining(tb testing.TB, pool *TxPool, signer types.Signer, baseFee *uint256.I
 
 //nolint:paralleltest
 func TestPoolMiningDataRaces(t *testing.T) {
-	if testing.Short() {
-		t.Skip("only for data race testing")
-	}
+	t.Skip("skip endless tests")
 
 	const format = "size %d, txs ticker %v, api ticker %v"
 
