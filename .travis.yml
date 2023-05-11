@@ -23,7 +23,7 @@ jobs:
         - GO111MODULE=on
       script:
         - go run build/ci.go install
-        - travis_wait go run build/ci.go test -coverage $TEST_PACKAGES
+        - travis_wait 30 go run build/ci.go test -coverage $TEST_PACKAGES
     - stage: Docker Image Release
       script:
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io/amis
