@@ -4097,6 +4097,211 @@ func BenchmarkBigs(b *testing.B) {
 // 		remoteAddr := crypto.PubkeyToAddress(remoteKey.PublicKey)
 // 		testAddBalance(pool, remoteAddr, balance)
 
+//func TestPoolMiningDataRaces(t *testing.T) {
+//	if testing.Short() {
+//		t.Skip("only for data race testing")
+//	}
+
+//	const format = "size %d, txs ticker %v, api ticker %v"
+
+//	cases := []struct {
+//		name              string
+//		size              int
+//		txsTickerDuration time.Duration
+//		apiTickerDuration time.Duration
+//	}{
+//		{
+//			size:              1,
+//			txsTickerDuration: 200 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              1,
+//			txsTickerDuration: 400 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              1,
+//			txsTickerDuration: 600 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              1,
+//			txsTickerDuration: 800 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+
+//		{
+//			size:              5,
+//			txsTickerDuration: 200 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              5,
+//			txsTickerDuration: 400 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              5,
+//			txsTickerDuration: 600 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              5,
+//			txsTickerDuration: 800 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+
+//		{
+//			size:              10,
+//			txsTickerDuration: 200 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              10,
+//			txsTickerDuration: 400 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              10,
+//			txsTickerDuration: 600 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              10,
+//			txsTickerDuration: 800 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+
+//		{
+//			size:              20,
+//			txsTickerDuration: 200 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              20,
+//			txsTickerDuration: 400 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              20,
+//			txsTickerDuration: 600 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              20,
+//			txsTickerDuration: 800 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+
+//		{
+//			size:              30,
+//			txsTickerDuration: 200 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              30,
+//			txsTickerDuration: 400 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              30,
+//			txsTickerDuration: 600 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//		{
+//			size:              30,
+//			txsTickerDuration: 800 * time.Millisecond,
+//			apiTickerDuration: 10 * time.Millisecond,
+//		},
+//	}
+
+//	for i := range cases {
+//		cases[i].name = fmt.Sprintf(format, cases[i].size, cases[i].txsTickerDuration, cases[i].apiTickerDuration)
+//	}
+
+//	//nolint:paralleltest
+//	for _, testCase := range cases {
+//		singleCase := testCase
+
+//		t.Run(singleCase.name, func(t *testing.T) {
+//			defer goleak.VerifyNone(t, leak.IgnoreList()...)
+
+//			const (
+//				blocks          = 300
+//				blockGasLimit   = 40_000_000
+//				blockPeriod     = time.Second
+//				threads         = 10
+//				batchesSize     = 10_000
+//				timeoutDuration = 10 * blockPeriod
+
+//				balanceStr = "1_000_000_000_000"
+//			)
+
+//			apiWithMining(t, balanceStr, batchesSize, singleCase, timeoutDuration, threads, blockPeriod, blocks, blockGasLimit)
+//		})
+//	}
+//}
+
+////nolint:gocognit,thelper
+//func apiWithMining(tb testing.TB, balanceStr string, batchesSize int, singleCase struct {
+//	name              string
+//	size              int
+//	txsTickerDuration time.Duration
+//	apiTickerDuration time.Duration
+//}, timeoutDuration time.Duration, threads int, blockPeriod time.Duration, blocks int, blockGasLimit uint64) {
+//	done := make(chan struct{})
+
+//	var wg sync.WaitGroup
+
+//	defer func() {
+//		close(done)
+
+//		tb.Logf("[%s] finishing apiWithMining", common.NowMilliseconds())
+
+//		wg.Wait()
+
+//		tb.Logf("[%s] apiWithMining finished", common.NowMilliseconds())
+//	}()
+
+//	// Generate a batch of transactions to enqueue into the pool
+//	pendingAddedCh := make(chan struct{}, 1024)
+
+//	pool, localKey := setupPoolWithConfig(params.TestChainConfig, testTxPoolConfig, txPoolGasLimit, MakeWithPromoteTxCh(pendingAddedCh))
+//	defer pool.Stop()
+
+//	localKeyPub := localKey.PublicKey
+//	account := crypto.PubkeyToAddress(localKeyPub)
+
+//	balance, ok := big.NewInt(0).SetString(balanceStr, 0)
+//	if !ok {
+//		tb.Fatal("incorrect initial balance", balanceStr)
+//	}
+
+//	testAddBalance(pool, account, balance)
+
+//	signer := types.NewEIP155Signer(big.NewInt(1))
+//	baseFee := uint256.NewInt(1)
+
+//	batchesLocal := make([]types.Transactions, batchesSize)
+//	batchesRemote := make([]types.Transactions, batchesSize)
+//	batchesRemotes := make([]types.Transactions, batchesSize)
+//	batchesRemoteSync := make([]types.Transactions, batchesSize)
+//	batchesRemotesSync := make([]types.Transactions, batchesSize)
+
+//	for i := 0; i < batchesSize; i++ {
+//		batchesLocal[i] = make(types.Transactions, singleCase.size)
+
+//		for j := 0; j < singleCase.size; j++ {
+//			batchesLocal[i][j] = pricedTransaction(uint64(singleCase.size*i+j), 100_000, big.NewInt(int64(i+1)), localKey)
+//		}
+
+//		batchesRemote[i] = make(types.Transactions, singleCase.size)
+
+//		remoteKey, _ := crypto.GenerateKey()
+//		remoteAddr := crypto.PubkeyToAddress(remoteKey.PublicKey)
+//		testAddBalance(pool, remoteAddr, balance)
+
 // 		for j := 0; j < singleCase.size; j++ {
 // 			batchesRemote[i][j] = pricedTransaction(uint64(j), 100_000, big.NewInt(int64(i+1)), remoteKey)
 // 		}
