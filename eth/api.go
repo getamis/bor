@@ -106,12 +106,7 @@ func (api *DebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash
 	signer := types.MakeSigner(api.eth.APIBackend.ChainConfig(), blockNumber, block.Header().Time)
 	for idx, receipt := range receipts {
 		tx := txs[idx]
-		from, _ := types.Sender(signer, tx)
-		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, from, receipt, blockHash, tx.Hash(), blockNumber.Uint64(), uint64(idx))
-
-		if err != nil {
-			return nil, err
-		}
+		fields := ethapi.MarshalReceipt(receipt, blockHash, blockNumber.Uint64(), signer, tx, idx, false)
 
 		txReceipts = append(txReceipts, fields)
 	}
@@ -119,12 +114,7 @@ func (api *DebugAPI) GetBlockReceipts(ctx context.Context, blockHash common.Hash
 	receipt := rawdb.ReadBorReceipt(api.eth.chainDb, blockHash, blockNumber.Uint64(), api.eth.blockchain.Config())
 	if receipt != nil {
 		tx, _, _, _ := rawdb.ReadBorTransaction(api.eth.chainDb, receipt.TxHash)
-		from, _ := types.Sender(signer, tx)
-		fields, err := ethapi.ToTransactionReceipt(ctx, api.eth.APIBackend, tx, from, receipt, blockHash, receipt.TxHash, blockNumber.Uint64(), uint64(receipt.TransactionIndex))
-
-		if err != nil {
-			return nil, err
-		}
+		fields := ethapi.MarshalReceipt(receipt, blockHash, blockNumber.Uint64(), signer, tx, int(receipt.TransactionIndex), true)
 
 		txReceipts = append(txReceipts, fields)
 	}
