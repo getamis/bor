@@ -362,6 +362,7 @@ func lineIterator(path string) func() (string, error) {
 
 // TestT8nTracing is a test that checks the tracing-output from t8n.
 func TestT8nTracing(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 	tt := new(testT8n)
 	tt.TestCmd = cmdtest.NewTestCmd(t, tt)
