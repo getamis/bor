@@ -282,6 +282,7 @@ var Forks = map[string]*params.ChainConfig{
 		ArrowGlacierBlock:       big.NewInt(0),
 		MergeNetsplitBlock:      big.NewInt(0),
 		TerminalTotalDifficulty: big.NewInt(0),
+		Bor:                     params.BorUnittestChainConfig.Bor,
 	},
 	"Merge": {
 		ChainID:                 big.NewInt(1),
@@ -357,6 +358,7 @@ var Forks = map[string]*params.ChainConfig{
 		TerminalTotalDifficulty: big.NewInt(0),
 		ShanghaiBlock:           big.NewInt(0),
 		CancunBlock:             big.NewInt(0),
+		Bor:                     params.BorUnittestChainConfig.Bor,
 	},
 	"ShanghaiToCancunAtTime15k": {
 		ChainID:                 big.NewInt(1),
@@ -374,6 +376,7 @@ var Forks = map[string]*params.ChainConfig{
 		ArrowGlacierBlock:       big.NewInt(0),
 		MergeNetsplitBlock:      big.NewInt(0),
 		TerminalTotalDifficulty: big.NewInt(0),
+		Bor:                     params.BorUnittestChainConfig.Bor,
 	},
 	"Prague": {
 		ChainID:                 big.NewInt(1),
@@ -394,6 +397,7 @@ var Forks = map[string]*params.ChainConfig{
 		ShanghaiBlock:           big.NewInt(0),
 		CancunBlock:             big.NewInt(0),
 		PragueBlock:             big.NewInt(0),
+		Bor:                     params.BorUnittestChainConfig.Bor,
 	},
 	"CancunToPragueAtTime15k": {
 		ChainID:                 big.NewInt(1),
@@ -414,6 +418,7 @@ var Forks = map[string]*params.ChainConfig{
 		ShanghaiBlock:           big.NewInt(0),
 		CancunBlock:             big.NewInt(0),
 		PragueBlock:             big.NewInt(0),
+		Bor:                     params.BorUnittestChainConfig.Bor,
 	},
 }
 
