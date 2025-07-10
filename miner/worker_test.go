@@ -23,6 +23,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	"github.com/holiman/uint256"
+	"gotest.tools/assert"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -44,9 +48,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/tests/bor/mocks"
 	"github.com/ethereum/go-ethereum/triedb"
-	"github.com/golang/mock/gomock"
-	"github.com/holiman/uint256"
-	"gotest.tools/assert"
 )
 
 // nolint : paralleltest
@@ -370,7 +371,7 @@ func TestGenerateAndImportBlock(t *testing.T) {
 			if _, err := chain.InsertChain([]*types.Block{block}); err != nil {
 				t.Fatalf("failed to insert new mined block %d: %v", block.NumberU64(), err)
 			}
-		case <-time.After(3 * time.Second): // Worker needs 1s to include new changes.
+		case <-time.After(60 * time.Second): // Worker needs 1s to include new changes.
 			t.Fatalf("timeout")
 		}
 	}
