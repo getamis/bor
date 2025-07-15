@@ -104,6 +104,12 @@ func (c *Command) Flags(config *Config) *flagset.Flagset {
 		Value:   &c.cliConfig.StateScheme,
 		Default: c.cliConfig.StateScheme,
 	})
+	f.BoolFlag(&flagset.BoolFlag{
+		Name:    "journalfile",
+		Usage:   "Enable using journal file to store the TrieJournal instead of KVDB in pbss (default = false)",
+		Value:   &c.cliConfig.JournalFileEnabled,
+		Default: c.cliConfig.JournalFileEnabled,
+	})
 	f.MapStringFlag(&flagset.MapStringFlag{
 		Name:    "eth.requiredblocks",
 		Usage:   "Comma separated block number-to-hash mappings to require for peering (<number>=<hash>)",
