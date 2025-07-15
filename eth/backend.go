@@ -71,6 +71,11 @@ import (
 	gethversion "github.com/ethereum/go-ethereum/version"
 )
 
+const (
+	JournalFileName = "trie.journal"
+	ChainData       = "chaindata"
+)
+
 var (
 	MilestoneWhitelistedDelayTimer = metrics.NewRegisteredTimer("chain/milestone/whitelisteddelay", nil)
 )
@@ -229,6 +234,12 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		}
 	}
 	var (
+		journalFilePath string
+		path            string
+	)
+	path = ChainData
+	journalFilePath = stack.ResolvePath(path) + "/" + JournalFileName
+	var (
 		vmConfig = vm.Config{
 			EnablePreimageRecording: config.EnablePreimageRecording,
 		}
@@ -244,6 +255,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			StateScheme:         scheme,
 			TriesInMemory:       config.TriesInMemory,
 			ChainHistoryMode:    config.HistoryMode,
+			JournalFilePath:     journalFilePath,
+			JournalFile:         config.JournalFileEnabled,
 		}
 	)
 
