@@ -3,7 +3,6 @@
 package ethconfig
 
 import (
-	"encoding/json"
 	"math/big"
 	"time"
 
@@ -17,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/miner"
 )
 
-// MarshalJSON marshals as JSON.
-func (c Config) MarshalJSON() ([]byte, error) {
+// MarshalTOML marshals as TOML.
+func (c Config) MarshalTOML() (interface{}, error) {
 	type Config struct {
 		Genesis                              *core.Genesis `toml:",omitempty"`
 		NetworkId                            uint64
@@ -33,8 +32,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		LogHistory                           uint64 `toml:",omitempty"`
 		LogNoHistory                         bool   `toml:",omitempty"`
 		LogExportCheckpoints                 string
-		StateHistory                         uint64                 `toml:",omitempty"`
-		StateScheme                          string                 `toml:",omitempty"`
+		StateHistory                         uint64 `toml:",omitempty"`
+		StateScheme                          string `toml:",omitempty"`
+		JournalFileEnabled                   bool
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   bool                   `toml:"-"`
 		DatabaseHandles                      int                    `toml:"-"`
@@ -93,6 +93,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	enc.LogExportCheckpoints = c.LogExportCheckpoints
 	enc.StateHistory = c.StateHistory
 	enc.StateScheme = c.StateScheme
+	enc.JournalFileEnabled = c.JournalFileEnabled
 	enc.RequiredBlocks = c.RequiredBlocks
 	enc.SkipBcVersionCheck = c.SkipBcVersionCheck
 	enc.DatabaseHandles = c.DatabaseHandles
@@ -134,11 +135,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	enc.DevFakeAuthor = c.DevFakeAuthor
 	enc.OverrideVerkle = c.OverrideVerkle
 	enc.EnableBlockTracking = c.EnableBlockTracking
-	return json.Marshal(&enc)
+	return &enc, nil
 }
 
-// UnmarshalJSON unmarshals from JSON.
-func (c *Config) UnmarshalJSON(input []byte) error {
+// UnmarshalTOML unmarshals from TOML.
+func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	type Config struct {
 		Genesis                              *core.Genesis `toml:",omitempty"`
 		NetworkId                            *uint64
@@ -153,8 +154,9 @@ func (c *Config) UnmarshalJSON(input []byte) error {
 		LogHistory                           *uint64 `toml:",omitempty"`
 		LogNoHistory                         *bool   `toml:",omitempty"`
 		LogExportCheckpoints                 *string
-		StateHistory                         *uint64                `toml:",omitempty"`
-		StateScheme                          *string                `toml:",omitempty"`
+		StateHistory                         *uint64 `toml:",omitempty"`
+		StateScheme                          *string `toml:",omitempty"`
+		JournalFileEnabled                   *bool
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   *bool                  `toml:"-"`
 		DatabaseHandles                      *int                   `toml:"-"`
@@ -198,7 +200,7 @@ func (c *Config) UnmarshalJSON(input []byte) error {
 		EnableBlockTracking                  *bool
 	}
 	var dec Config
-	if err := json.Unmarshal(input, &dec); err != nil {
+	if err := unmarshal(&dec); err != nil {
 		return err
 	}
 	if dec.Genesis != nil {
@@ -245,6 +247,9 @@ func (c *Config) UnmarshalJSON(input []byte) error {
 	}
 	if dec.StateScheme != nil {
 		c.StateScheme = *dec.StateScheme
+	}
+	if dec.JournalFileEnabled != nil {
+		c.JournalFileEnabled = *dec.JournalFileEnabled
 	}
 	if dec.RequiredBlocks != nil {
 		c.RequiredBlocks = dec.RequiredBlocks
