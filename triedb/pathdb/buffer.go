@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -156,4 +157,16 @@ func (b *buffer) flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, node
 	b.reset()
 	log.Debug("Persisted buffer content", "nodes", nodes, "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	return nil
+}
+
+func (b *buffer) waitAndStopFlushing() {}
+
+// getAllNodesAndStates return the trie nodes and states cached in nodebuffer.
+func (b *buffer) getAllNodesAndStates() (*nodeSet, *stateSet) {
+	return b.nodes, b.states
+}
+
+// getLayers return the size of cached difflayers.
+func (b *buffer) getLayers() uint64 {
+	return b.layers
 }
