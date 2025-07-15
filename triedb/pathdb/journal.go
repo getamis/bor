@@ -221,9 +221,11 @@ func (dl *diffLayer) journal(w io.Writer) error {
 		return err
 	}
 	// Write the accumulated trie nodes into buffer
+	_ = dl.getNodeSetFromDB()
 	if err := dl.nodes.encode(w); err != nil {
 		return err
 	}
+	dl.nodes.reset()
 	// Write the associated flat state set into buffer
 	if err := dl.states.encode(w); err != nil {
 		return err

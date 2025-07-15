@@ -18,6 +18,7 @@ package pathdb
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,6 +52,19 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 		nodes:  nodes,
 		states: states,
 	}
+
+	err := dl.offloadNodeSetToDB()
+	if err != nil {
+		log.Error("Failed to offload nodeSet to DB", "id", id, "block", block)
+	}
+
+	runtime.SetFinalizer(dl, func(dl *diffLayer) {
+		err := deleteNodeSet(dl.block, dl.root)
+		if err != nil {
+			log.Error("Failed to delete nodeSet", "id", dl.id, "block", dl.block, "root", dl.root.String(), "err", err)
+		}
+	})
+
 	dirtyNodeWriteMeter.Mark(int64(nodes.size))
 	dirtyStateWriteMeter.Mark(int64(states.size))
 	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
@@ -79,7 +93,18 @@ func (dl *diffLayer) parentLayer() layer {
 
 // node implements the layer interface, retrieving the trie node blob with the
 // provided node information. No error will be returned if the node is not found.
-func (dl *diffLayer) node(owner common.Hash, path []byte, depth int) ([]byte, common.Hash, *nodeLoc, error) {
+func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error) {
+	// If the depth is 0, we can try to resolve the node from the node blob DB.
+	if depth == 0 {
+		if hash != (common.Hash{}) {
+			if blob := getNodeBlob(hash); blob != nil {
+				// The query from the hash map is fastpath,
+				// avoiding recursive query of multiple difflayers.
+				return blob, hash, &nodeLoc{loc: locDiffLayer, depth: depth}, nil
+			}
+		}
+	}
+
 	// Hold the lock, ensure the parent won't be changed during the
 	// state accessing.
 	dl.lock.RLock()
@@ -94,7 +119,7 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, depth int) ([]byte, co
 		return n.Blob, n.Hash, &nodeLoc{loc: locDiffLayer, depth: depth}, nil
 	}
 	// Trie node unknown to this layer, resolve from parent
-	return dl.parent.node(owner, path, depth+1)
+	return dl.parent.node(owner, path, hash, depth+1)
 }
 
 // account directly retrieves the account RLP associated with a particular
@@ -179,6 +204,27 @@ func (dl *diffLayer) persist(force bool) (layer, error) {
 // size returns the approximate memory size occupied by this diff layer.
 func (dl *diffLayer) size() uint64 {
 	return dl.nodes.size + dl.states.size
+}
+
+func (dl *diffLayer) getNodeSetFromDB() error {
+	if dl.nodes.size > 0 {
+		return nil
+	}
+	nodes, err := getNodeSet(dl.block, dl.root)
+	if err != nil {
+		return err
+	}
+	dl.nodes = nodes
+	return nil
+}
+
+func (dl *diffLayer) offloadNodeSetToDB() error {
+	err := setNodeSet(dl.block, dl.root, dl.nodes)
+	if err != nil {
+		return err
+	}
+	dl.nodes.reset()
+	return nil
 }
 
 // diffToDisk merges a bottom-most diff into the persistent disk layer underneath
