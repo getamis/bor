@@ -21,6 +21,8 @@ import (
 	"runtime"
 	"sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -79,6 +81,48 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 	dirtyNodeWriteMeter.Mark(int64(nodes.size))
 	dirtyStateWriteMeter.Mark(int64(states.size))
 	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
+	return dl
+}
+
+func newDiffLayerForJournal(parent layer, root common.Hash, id uint64, block uint64, nodes *nodeSet, states *StateSetWithOrigin, eg *errgroup.Group) *diffLayer {
+	dl := &diffLayer{
+		root:   root,
+		id:     id,
+		block:  block,
+		parent: parent,
+		nodes:  nodes,
+		states: states,
+	}
+
+	switch l := parent.(type) {
+	case *diskLayer:
+		dl.origin = l
+	case *diffLayer:
+		dl.origin = l.originDiskLayer()
+	default:
+		panic("unknown parent type")
+	}
+
+	runtime.SetFinalizer(dl, func(dl *diffLayer) {
+		err := deleteNodeSet(dl.block, dl.root)
+		if err != nil {
+			log.Error("Failed to delete nodeSet", "id", dl.id, "block", dl.block, "root", dl.root.String(), "err", err)
+		}
+	})
+
+	dirtyNodeWriteMeter.Mark(int64(nodes.size))
+	dirtyStateWriteMeter.Mark(int64(states.size))
+	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
+
+	eg.Go(func() error {
+		err := dl.offloadNodeSetToDB()
+		if err != nil {
+			log.Error("Failed to offload nodeSet to DB", "id", id, "block", block)
+			return err
+		}
+		return nil
+	})
+
 	return dl
 }
 
