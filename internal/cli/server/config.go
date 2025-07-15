@@ -8,11 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	godebug "runtime/debug"
 	"strconv"
 	"strings"
 	"time"
-
-	godebug "runtime/debug"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/imdario/mergo"
@@ -87,6 +86,8 @@ type Config struct {
 
 	// state.scheme selects the Scheme to use for storing ethereum state ('hash' or 'path')
 	StateScheme string `hcl:"state.scheme,optional" toml:"state.scheme,optional"`
+
+	JournalFileEnabled bool // Whether the TrieJournal is stored using journal file
 
 	// Snapshot enables the snapshot database mode
 	Snapshot bool `hcl:"snapshot,optional" toml:"snapshot,optional"`
@@ -1305,6 +1306,8 @@ func (c *Config) buildEth(stack *node.Node, accountManager *accounts.Manager) (*
 	}
 
 	n.EnableBlockTracking = c.Logging.EnableBlockTracking
+
+	n.JournalFileEnabled = c.JournalFileEnabled
 
 	return &n, nil
 }
