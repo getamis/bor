@@ -32,8 +32,9 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		LogHistory                           uint64 `toml:",omitempty"`
 		LogNoHistory                         bool   `toml:",omitempty"`
 		LogExportCheckpoints                 string
-		StateHistory                         uint64                 `toml:",omitempty"`
-		StateScheme                          string                 `toml:",omitempty"`
+		StateHistory                         uint64 `toml:",omitempty"`
+		StateScheme                          string `toml:",omitempty"`
+		JournalFileEnabled                   bool
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   bool                   `toml:"-"`
 		DatabaseHandles                      int                    `toml:"-"`
@@ -98,6 +99,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.LogExportCheckpoints = c.LogExportCheckpoints
 	enc.StateHistory = c.StateHistory
 	enc.StateScheme = c.StateScheme
+	enc.JournalFileEnabled = c.JournalFileEnabled
 	enc.RequiredBlocks = c.RequiredBlocks
 	enc.SkipBcVersionCheck = c.SkipBcVersionCheck
 	enc.DatabaseHandles = c.DatabaseHandles
@@ -164,8 +166,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		LogHistory                           *uint64 `toml:",omitempty"`
 		LogNoHistory                         *bool   `toml:",omitempty"`
 		LogExportCheckpoints                 *string
-		StateHistory                         *uint64                `toml:",omitempty"`
-		StateScheme                          *string                `toml:",omitempty"`
+		StateHistory                         *uint64 `toml:",omitempty"`
+		StateScheme                          *string `toml:",omitempty"`
+		JournalFileEnabled                   *bool
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   *bool                  `toml:"-"`
 		DatabaseHandles                      *int                   `toml:"-"`
@@ -262,6 +265,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.StateScheme != nil {
 		c.StateScheme = *dec.StateScheme
+	}
+	if dec.JournalFileEnabled != nil {
+		c.JournalFileEnabled = *dec.JournalFileEnabled
 	}
 	if dec.RequiredBlocks != nil {
 		c.RequiredBlocks = dec.RequiredBlocks
