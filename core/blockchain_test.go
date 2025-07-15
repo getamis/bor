@@ -45,6 +45,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"github.com/holiman/uint256"
 )
 
@@ -52,6 +53,10 @@ import (
 var (
 	canonicalSeed = 1
 	forkSeed      = 2
+
+	TestTriesInMemory    = 128
+	TestMaxDiffLayers    = pathdb.MaxDiffLayers
+	TestAdditionalLayers = 128
 )
 
 // newCanonical creates a chain database, and injects a deterministic canonical
@@ -1974,8 +1979,8 @@ func testLargeReorgTrieGC(t *testing.T, scheme string) {
 		BaseFee: big.NewInt(params.InitialBaseFee),
 	}
 	genDb, shared, _ := GenerateChainWithGenesis(genesis, engine, 64, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{1}) })
-	original, _ := GenerateChain(genesis.Config, shared[len(shared)-1], engine, genDb, 2*state.TriesInMemory, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{2}) })
-	competitor, _ := GenerateChain(genesis.Config, shared[len(shared)-1], engine, genDb, 2*state.TriesInMemory+1, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{3}) })
+	original, _ := GenerateChain(genesis.Config, shared[len(shared)-1], engine, genDb, TestMaxDiffLayers+TestAdditionalLayers, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{2}) })
+	competitor, _ := GenerateChain(genesis.Config, shared[len(shared)-1], engine, genDb, TestMaxDiffLayers+TestAdditionalLayers+1, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{3}) })
 
 	// Import the shared chain and the original canonical one
 	db, _ := rawdb.NewDatabaseWithFreezer(rawdb.NewMemoryDatabase(), "", "", false, false, false)
@@ -2014,11 +2019,11 @@ func testLargeReorgTrieGC(t *testing.T, scheme string) {
 	if _, err := chain.InsertChain(competitor[len(competitor)-2:]); err != nil {
 		t.Fatalf("failed to finalize competitor chain: %v", err)
 	}
-	// In path-based trie database implementation, it will keep 128 diff + 1 disk
-	// layers, totally 129 latest states available. In hash-based it's 128.
-	states := state.TriesInMemory
+	// In path-based trie database implementation, it will keep maxDiffLayers diff + 1 disk
+	// layers, totally maxDiffLayers+1 latest states available. In hash-based it's 128.
+	states := TestTriesInMemory
 	if scheme == rawdb.PathScheme {
-		states = states + 1
+		states = TestMaxDiffLayers + 1
 	}
 	for i, block := range competitor[:len(competitor)-states] {
 		if chain.HasState(block.Root()) {
@@ -3025,7 +3030,7 @@ func testSideImportPrunedBlocks(t *testing.T, scheme string) {
 		BaseFee: big.NewInt(params.InitialBaseFee),
 	}
 	// Generate and import the canonical chain
-	_, blocks, _ := GenerateChainWithGenesis(genesis, engine, 2*state.TriesInMemory, nil)
+	_, blocks, _ := GenerateChainWithGenesis(genesis, engine, TestMaxDiffLayers+TestAdditionalLayers, nil)
 
 	// Construct a database with freezer enabled
 	datadir := t.TempDir()
@@ -3052,11 +3057,11 @@ func testSideImportPrunedBlocks(t *testing.T, scheme string) {
 		t.Fatalf("block %d: failed to insert into chain: %v", n, err)
 	}
 
-	// In path-based trie database implementation, it will keep 128 diff + 1 disk
-	// layers, totally 129 latest states available. In hash-based it's 128.
-	states := state.TriesInMemory
+	// In path-based trie database implementation, it will keep maxDiffLayers diff + 1 disk
+	// layers, totally maxDiffLayers+1 latest states available. In hash-based it's 128.
+	states := TestTriesInMemory
 	if scheme == rawdb.PathScheme {
-		states = state.TriesInMemory + 1
+		states = TestMaxDiffLayers + 1
 	}
 
 	lastPrunedIndex := len(blocks) - states - 1
