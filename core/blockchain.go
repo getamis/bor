@@ -174,6 +174,8 @@ type CacheConfig struct {
 	TriesInMemory       uint64        // Number of recent tries to keep in memory
 	StateHistory        uint64        // Number of blocks from head whose state histories are reserved.
 	StateScheme         string        // Scheme used to store ethereum states and merkle tree nodes on top
+	JournalFilePath     string
+	JournalFile         bool
 
 	SnapshotNoBuild bool // Whether the background generation is allowed
 	SnapshotWait    bool // Wait for snapshot construction on startup. TODO(karalabe): This is a dirty hack for testing, nuke it
@@ -201,6 +203,8 @@ func (c *CacheConfig) triedbConfig(isVerkle bool) *triedb.Config {
 			StateHistory:    c.StateHistory,
 			CleanCacheSize:  c.TrieCleanLimit * 1024 * 1024,
 			WriteBufferSize: c.TrieDirtyLimit * 1024 * 1024,
+			JournalFilePath: c.JournalFilePath,
+			JournalFile:     c.JournalFile,
 		}
 	}
 	return config
