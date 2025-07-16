@@ -38,6 +38,8 @@ type diffLayer struct {
 	nodes  *nodeSet            // Cached trie nodes indexed by owner and path
 	states *StateSetWithOrigin // Associated state changes along with origin value
 
+	// mutables
+	origin *diskLayer   // The current difflayer corresponds to the underlying disklayer and is updated during cap.
 	parent layer        // Parent layer modified by this one, never nil, **can be changed**
 	lock   sync.RWMutex // Lock used to protect parent
 }
@@ -51,6 +53,15 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 		parent: parent,
 		nodes:  nodes,
 		states: states,
+	}
+
+	switch l := parent.(type) {
+	case *diskLayer:
+		dl.origin = l
+	case *diffLayer:
+		dl.origin = l.originDiskLayer()
+	default:
+		panic("unknown parent type")
 	}
 
 	err := dl.offloadNodeSetToDB()
@@ -69,6 +80,18 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 	dirtyStateWriteMeter.Mark(int64(states.size))
 	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
 	return dl
+}
+
+func (dl *diffLayer) originDiskLayer() *diskLayer {
+	dl.lock.RLock()
+	defer dl.lock.RUnlock()
+	return dl.origin
+}
+
+func (dl *diffLayer) updateOriginDiskLayer(persistLayer *diskLayer) {
+	dl.lock.Lock()
+	defer dl.lock.Unlock()
+	dl.origin = persistLayer
 }
 
 // rootHash implements the layer interface, returning the root hash of
@@ -94,13 +117,28 @@ func (dl *diffLayer) parentLayer() layer {
 // node implements the layer interface, retrieving the trie node blob with the
 // provided node information. No error will be returned if the node is not found.
 func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error) {
-	// If the depth is 0, we can try to resolve the node from the node blob DB.
+	// If the depth is 0, we can try to resolve the node from the node blob DB and the origin disk layer.
 	if depth == 0 {
 		if hash != (common.Hash{}) {
 			if blob := getNodeBlob(hash); blob != nil {
 				// The query from the hash map is fastpath,
 				// avoiding recursive query of multiple difflayers.
 				return blob, hash, &nodeLoc{loc: locDiffLayer, depth: depth}, nil
+			}
+		}
+
+		persistLayer := dl.originDiskLayer()
+		if hash != (common.Hash{}) && persistLayer != nil {
+			blob, rhash, nloc, err := persistLayer.node(owner, path, hash, depth+1)
+			if err != nil || rhash != hash {
+				// This is a bad case with a very low probability.
+				// r/w the difflayer cache and r/w the disklayer are not in the same lock,
+				// so in extreme cases, both reading the difflayer cache and reading the disklayer may fail, eg, disklayer is stale.
+				// In this case, fallback to the original 128-layer recursive difflayer query path.
+				log.Debug("Retry difflayer due to query origin failed",
+					"owner", owner, "path", path, "query_hash", hash.String(), "return_hash", rhash.String(), "error", err)
+			} else { // This is the fastpath.
+				return blob, rhash, nloc, nil
 			}
 		}
 	}

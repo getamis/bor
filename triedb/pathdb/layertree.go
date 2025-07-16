@@ -141,6 +141,7 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 			return nil
 		}
 	}
+	var persisted *diskLayer
 	// We're out of layers, flatten anything below, stopping if it's the disk or if
 	// the memory limit is not yet exceeded.
 	switch parent := diff.parentLayer().(type) {
@@ -161,6 +162,7 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 		diff.parent = base
 
 		diff.lock.Unlock()
+		persisted = base.(*diskLayer)
 
 	default:
 		panic(fmt.Sprintf("unknown data layer in triedb: %T", parent))
@@ -186,6 +188,20 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 			remove(root)
 		}
 	}
+
+	if persisted != nil {
+		var updateOriginFunc func(root common.Hash)
+		updateOriginFunc = func(root common.Hash) {
+			if diff, ok := tree.layers[root].(*diffLayer); ok {
+				diff.updateOriginDiskLayer(persisted)
+			}
+			for _, child := range children[root] {
+				updateOriginFunc(child)
+			}
+		}
+		updateOriginFunc(persisted.root)
+	}
+
 	return nil
 }
 
