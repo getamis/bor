@@ -42,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 )
 
 // Node is a container on which services can be registered.
@@ -794,6 +795,16 @@ func (n *Node) OpenDatabase(name string, cache, handles int, namespace string, r
 	return db, err
 }
 
+// OpenNodeBlobDB opens the NodeBlob database.
+func (n *Node) OpenNodeBlobDB() error {
+	return pathdb.InitNodeBlobDB(n.ResolvePath("nodeblob"), false)
+}
+
+// OpenHashNodeDB opens the HashNode database.
+func (n *Node) OpenHashNodeDB() error {
+	return pathdb.InitHashNodeDB(n.ResolvePath("hashnode"), false)
+}
+
 // OpenDatabaseWithFreezer opens an existing database with the given name (or
 // creates one if no previous can be found) from within the node's data directory,
 // also attaching a chain freezer to it that moves ancient chain data from the
@@ -828,6 +839,16 @@ func (n *Node) OpenDatabaseWithFreezer(name string, cache, handles int, ancient,
 	}
 	if err == nil {
 		db = n.wrapDatabase(db)
+	}
+
+	// open DB for nodeblob
+	if err := n.OpenNodeBlobDB(); err != nil {
+		return nil, err
+	}
+
+	// open DB for hashnode
+	if err := n.OpenHashNodeDB(); err != nil {
+		return nil, err
 	}
 
 	return db, err

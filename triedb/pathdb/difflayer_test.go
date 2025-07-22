@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -30,7 +32,7 @@ import (
 func emptyLayer() *diskLayer {
 	return &diskLayer{
 		db:     New(rawdb.NewMemoryDatabase(), nil, false),
-		buffer: newBuffer(defaultBufferSize, nil, nil, 0),
+		buffer: newBuffer(defaultDirtyBufferSize, nil, nil, 0),
 	}
 }
 
@@ -56,7 +58,6 @@ func BenchmarkSearch512Layers(b *testing.B) { benchmarkSearch(b, 0, 512) }
 func BenchmarkSearch1Layer(b *testing.B) { benchmarkSearch(b, 127, 128) }
 
 func benchmarkSearch(b *testing.B, depth int, total int) {
-	b.Helper()
 	var (
 		npath []byte
 		nblob []byte
@@ -91,7 +92,7 @@ func benchmarkSearch(b *testing.B, depth int, total int) {
 		err  error
 	)
 	for i := 0; i < b.N; i++ {
-		have, _, _, err = layer.node(common.Hash{}, npath, 0)
+		have, _, _, err = layer.node(common.Hash{}, npath, common.Hash{}, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -167,6 +168,8 @@ func BenchmarkJournal(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		layer.journal(new(bytes.Buffer))
+		eg := &errgroup.Group{}
+		layer.journal(new(bytes.Buffer), JournalKVType, eg, nil)
+		_ = eg.Wait()
 	}
 }

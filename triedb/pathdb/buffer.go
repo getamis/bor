@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -72,7 +73,7 @@ func (b *buffer) node(owner common.Hash, path []byte) (*trienode.Node, bool) {
 }
 
 // commit merges the provided states and trie nodes into the buffer.
-func (b *buffer) commit(nodes *nodeSet, states *stateSet) *buffer {
+func (b *buffer) commit(nodes *nodeSet, states *stateSet) trienodebuffer {
 	b.layers++
 	b.nodes.merge(nodes)
 	b.states.merge(states)
@@ -95,7 +96,13 @@ func (b *buffer) revertTo(db ethdb.KeyValueReader, nodes map[common.Hash]map[str
 		return nil
 	}
 	b.nodes.revertTo(db, nodes)
-	b.states.revertTo(accounts, storages)
+	// TODO(galaio): In order to be compatible with the legacy version, a temporary empty check is added,
+	// which may affect the reading result of pbss as flatReader, see: flatReader.Account()
+	// it could be removed in the future
+	// Caution: there is also a panic issue with non-empty states when rewinding the chain again, but it is a very low possibility with finality.
+	if len(b.states.accountData) != 0 || len(b.states.storageData) != 0 {
+		b.states.revertTo(accounts, storages)
+	}
 	return nil
 }
 
@@ -124,7 +131,11 @@ func (b *buffer) size() uint64 {
 
 // flush persists the in-memory dirty trie node into the disk if the configured
 // memory threshold is reached. Note, all data must be written atomically.
-func (b *buffer) flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, nodesCache *fastcache.Cache, id uint64) error {
+func (b *buffer) flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, nodesCache *fastcache.Cache, id uint64, force bool) error {
+	if !b.full() && !force {
+		return nil
+	}
+
 	// Ensure the target state id is aligned with the internal counter.
 	head := rawdb.ReadPersistentStateID(db)
 	if head+b.layers != id {
@@ -135,8 +146,11 @@ func (b *buffer) flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, node
 		start = time.Now()
 		batch = db.NewBatchWithSize(b.nodes.dbsize() * 11 / 10) // extra 10% for potential pebble internal stuff
 	)
-	// Explicitly sync the state freezer, ensuring that all written
-	// data is transferred to disk before updating the key-value store.
+	// Explicitly sync the state freezer to ensure all written data is persisted to disk
+	// before updating the key-value store.
+	//
+	// This step is crucial to guarantee that the corresponding state history remains
+	// available for state rollback.
 	if freezer != nil {
 		if err := freezer.Sync(); err != nil {
 			return err
@@ -156,4 +170,25 @@ func (b *buffer) flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, node
 	b.reset()
 	log.Debug("Persisted buffer content", "nodes", nodes, "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	return nil
+}
+
+func (b *buffer) waitAndStopFlushing() {}
+
+// getAllNodesAndStates return the trie nodes and states cached in nodebuffer.
+func (b *buffer) getAllNodesAndStates() (*nodeSet, *stateSet) {
+	return b.nodes, b.states
+}
+
+func (b *buffer) getStates() *stateSet {
+	return b.states
+}
+
+// getLayers return the size of cached difflayers.
+func (b *buffer) getLayers() uint64 {
+	return b.layers
+}
+
+// getSize return the nodebuffer used size.
+func (b *buffer) getSize() (uint64, uint64) {
+	return b.size(), 0
 }

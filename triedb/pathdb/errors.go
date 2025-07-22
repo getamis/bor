@@ -39,4 +39,18 @@ var (
 	// errStateUnrecoverable is returned if state is required to be reverted to
 	// a destination without associated state history available.
 	errStateUnrecoverable = errors.New("state is unrecoverable")
+
+	// errWriteImmutable is returned if write to background immutable nodecache
+	// under asyncnodebuffer
+	errWriteImmutable = errors.New("write immutable nodecache")
+
+	// errFlushMutable is returned if flush the background mutable nodecache
+	// to disk, under asyncnodebuffer
+	errFlushMutable = errors.New("flush mutable nodecache")
+
+	// errIncompatibleMerge is returned when merge node cache occurs error.
+	errIncompatibleMerge = errors.New("incompatible nodecache merge")
+
+	// errRevertImmutable is returned if revert the background immutable nodecache
+	errRevertImmutable = errors.New("revert immutable nodecache")
 )

@@ -23,6 +23,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -31,7 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/holiman/uint256"
 )
 
 func updateTrie(db *Database, stateRoot common.Hash, addrHash common.Hash, root common.Hash, dirties map[common.Hash][]byte) (common.Hash, *trienode.NodeSet) {
@@ -443,13 +444,18 @@ func (t *tester) bottomIndex() int {
 
 func TestDatabaseRollback(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	// Verify state histories
 	tester := newTester(t, 0, false, 32)
+	bottom := tester.db.tree.bottom()
+	if err := bottom.buffer.flush(tester.db.diskdb, tester.db.freezer, bottom.nodes, bottom.id, true); err != nil {
+		t.Fatalf("Failed to force flush: %v", err)
+	}
 	defer tester.release()
 
 	if err := tester.verifyHistory(); err != nil {
@@ -477,9 +483,10 @@ func TestDatabaseRollback(t *testing.T) {
 
 func TestDatabaseRecoverable(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	var (
@@ -522,12 +529,17 @@ func TestDatabaseRecoverable(t *testing.T) {
 
 func TestDisable(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	tester := newTester(t, 0, false, 32)
+	bottom := tester.db.tree.bottom()
+	if err := bottom.buffer.flush(tester.db.diskdb, tester.db.freezer, nil, bottom.id, true); err != nil {
+		t.Fatalf("Failed to force flush: %v", err)
+	}
 	defer tester.release()
 
 	stored := crypto.Keccak256Hash(rawdb.ReadAccountTrieNode(tester.db.diskdb, nil))
@@ -564,9 +576,10 @@ func TestDisable(t *testing.T) {
 
 func TestCommit(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	tester := newTester(t, 0, false, 12)
@@ -594,9 +607,10 @@ func TestCommit(t *testing.T) {
 
 func TestJournal(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	tester := newTester(t, 0, false, 12)
@@ -624,9 +638,10 @@ func TestJournal(t *testing.T) {
 
 func TestCorruptedJournal(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	tester := newTester(t, 0, false, 12)
@@ -672,24 +687,31 @@ func TestCorruptedJournal(t *testing.T) {
 // always falls within the range of [oldest-history-id, latest-history-id].
 func TestTailTruncateHistory(t *testing.T) {
 	// Redefine the diff layer depth allowance for faster testing.
-	maxDiffLayers = 4
+	backupMaxDiffLayers := MaxDiffLayers
+	MaxDiffLayers = 4
 	defer func() {
-		maxDiffLayers = 128
+		MaxDiffLayers = backupMaxDiffLayers
 	}()
 
 	tester := newTester(t, 10, false, 12)
 	defer tester.release()
 
+	// ignore error, whether `Journal` success or not, this UT must succeed
+	tester.db.Journal(tester.lastHash())
 	tester.db.Close()
 	tester.db = New(tester.db.diskdb, &Config{StateHistory: 10}, false)
-
 	head, err := tester.db.freezer.Ancients()
 	if err != nil {
 		t.Fatalf("Failed to obtain freezer head")
 	}
-	stored := rawdb.ReadPersistentStateID(tester.db.diskdb)
-	if head != stored {
-		t.Fatalf("Failed to truncate excess history object above, stored: %d, head: %d", stored, head)
+	bottom := tester.db.tree.bottom().id
+	if head != bottom {
+		t.Fatalf("Failed to truncate excess history object above, bottom: %d, head: %d", bottom, head)
+	}
+	persistID := rawdb.ReadPersistentStateID(tester.db.diskdb)
+	diffLayers := tester.db.tree.bottom().buffer.getLayers()
+	if persistID != bottom && head != persistID+diffLayers {
+		t.Fatalf("Failed to truncate excess history object above, bottom: %d, persistID: %d, diffLayers: %d", bottom, persistID, diffLayers)
 	}
 }
 
