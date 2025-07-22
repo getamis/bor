@@ -69,7 +69,7 @@ type backend interface {
 	//
 	// For hash scheme, there is no differentiation between diff layer nodes
 	// and dirty disk layer nodes, so both are merged into the second return.
-	Size() (common.StorageSize, common.StorageSize)
+	Size() (common.StorageSize, common.StorageSize, common.StorageSize)
 
 	// Commit writes all relevant trie nodes belonging to the specified state
 	// to disk. Report specifies whether logs will be displayed in info level.
@@ -164,14 +164,14 @@ func (db *Database) Commit(root common.Hash, report bool) error {
 // preimages.
 func (db *Database) Size() (common.StorageSize, common.StorageSize, common.StorageSize) {
 	var (
-		diffs, nodes common.StorageSize
-		preimages    common.StorageSize
+		diffs, nodes, immutableNodes common.StorageSize
+		preimages                    common.StorageSize
 	)
-	diffs, nodes = db.backend.Size()
+	diffs, nodes, immutableNodes = db.backend.Size()
 	if db.preimages != nil {
 		preimages = db.preimages.size()
 	}
-	return diffs, nodes, preimages
+	return diffs, nodes + immutableNodes, preimages
 }
 
 // Scheme returns the node scheme used in the database.

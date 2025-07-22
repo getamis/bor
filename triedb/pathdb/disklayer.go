@@ -22,11 +22,70 @@ import (
 	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/trie/trienode"
 )
+
+// trienodebuffer is a collection of modified trie nodes to aggregate the disk
+// write. The content of the trienodebuffer must be checked before diving into
+// disk (since it basically is not-yet-written data).
+type trienodebuffer interface {
+	// account retrieves the account blob with account address hash.
+	account(hash common.Hash) ([]byte, bool)
+
+	// storage retrieves the storage slot with account address hash and slot key.
+	storage(addrHash common.Hash, storageHash common.Hash) ([]byte, bool)
+
+	// node retrieves the trie node with given node info.
+	node(owner common.Hash, path []byte) (*trienode.Node, bool)
+
+	// commit merges the provided states and trie nodes into the buffer. This operation won't take
+	// the ownership of the nodes map which belongs to the bottom-most diff layer.
+	// It will just hold the node references from the given map which are safe to
+	// copy.
+	commit(nodes *nodeSet, states *stateSet) trienodebuffer
+
+	// revertTo is the reverse operation of commit. It also merges the provided states
+	// and trie nodes into the buffer. The key difference is that the provided state
+	// set should reverse the changes made by the most recent state transition.
+	revertTo(db ethdb.KeyValueReader, nodes map[common.Hash]map[string]*trienode.Node, accounts map[common.Hash][]byte, storages map[common.Hash]map[common.Hash][]byte) error
+
+	// flush persists the in-memory dirty trie node into the disk if the configured
+	// memory threshold is reached. Note, all data must be written atomically.
+	flush(db ethdb.KeyValueStore, freezer ethdb.AncientWriter, clean *fastcache.Cache, id uint64, force bool) error
+
+	// empty returns an indicator if trienodebuffer contains any state transition inside.
+	empty() bool
+
+	// waitAndStopFlushing will block unit writing the trie nodes of trienodebuffer to disk.
+	waitAndStopFlushing()
+
+	// getAllNodesAndStates return the trie nodes and states cached in nodebuffer.
+	getAllNodesAndStates() (*nodeSet, *stateSet)
+
+	// getStates return the states cached in nodebuffer.
+	getStates() *stateSet
+
+	// getLayers return the size of cached difflayers.
+	getLayers() uint64
+
+	// getSize return the trienodebuffer used size.
+	getSize() (uint64, uint64)
+}
+
+func NewTrieNodeBuffer(sync bool, limit int, nodes *nodeSet, states *stateSet, layers uint64) trienodebuffer {
+	if sync {
+		log.Info("New sync node buffer", "limit", common.StorageSize(limit), "layers", layers)
+		return newBuffer(limit, nodes, states, layers)
+	}
+	log.Info("New async node buffer", "limit", common.StorageSize(limit), "layers", layers)
+	return newAsyncNodeBuffer(limit, nodes, states, layers)
+}
 
 // diskLayer is a low level persistent layer built on top of a key-value store.
 type diskLayer struct {
@@ -34,13 +93,13 @@ type diskLayer struct {
 	id     uint64           // Immutable, corresponding state id
 	db     *Database        // Path-based trie database
 	nodes  *fastcache.Cache // GC friendly memory cache of clean nodes
-	buffer *buffer          // Dirty buffer to aggregate writes of nodes and states
+	buffer trienodebuffer   // Dirty buffer to aggregate writes of nodes and states
 	stale  bool             // Signals that the layer became stale (state progressed)
 	lock   sync.RWMutex     // Lock used to protect stale flag
 }
 
 // newDiskLayer creates a new disk layer based on the passing arguments.
-func newDiskLayer(root common.Hash, id uint64, db *Database, nodes *fastcache.Cache, buffer *buffer) *diskLayer {
+func newDiskLayer(root common.Hash, id uint64, db *Database, nodes *fastcache.Cache, buffer trienodebuffer) *diskLayer {
 	// Initialize a clean cache if the memory allowance is not zero
 	// or reuse the provided cache if it is not nil (inherited from
 	// the original disk layer).
@@ -94,7 +153,7 @@ func (dl *diskLayer) markStale() {
 
 // node implements the layer interface, retrieving the trie node with the
 // provided node info. No error will be returned if the node is not found.
-func (dl *diskLayer) node(owner common.Hash, path []byte, depth int) ([]byte, common.Hash, *nodeLoc, error) {
+func (dl *diskLayer) node(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error) {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
 
@@ -267,11 +326,10 @@ func (dl *diskLayer) commit(bottom *diffLayer, force bool) (*diskLayer, error) {
 	}
 	// Merge the trie nodes and flat states of the bottom-most diff layer into the
 	// buffer as the combined layer.
+	bottom.getNodeSetFromDB()
 	combined := dl.buffer.commit(bottom.nodes, bottom.states.stateSet)
-	if combined.full() || force {
-		if err := combined.flush(dl.db.diskdb, dl.db.freezer, dl.nodes, bottom.stateID()); err != nil {
-			return nil, err
-		}
+	if err := combined.flush(dl.db.diskdb, dl.db.freezer, dl.nodes, bottom.stateID(), force); err != nil {
+		return nil, err
 	}
 	ndl := newDiskLayer(bottom.root, bottom.stateID(), dl.db, dl.nodes, combined)
 
@@ -284,6 +342,9 @@ func (dl *diskLayer) commit(bottom *diffLayer, force bool) (*diskLayer, error) {
 		}
 		log.Debug("Pruned state history", "items", pruned, "tailid", oldest)
 	}
+
+	// The bottom has been eaten by disklayer, releasing the hash cache of bottom difflayer.
+	bottom.cache.Remove(bottom)
 	return ndl, nil
 }
 
@@ -334,14 +395,15 @@ func (dl *diskLayer) revert(h *history) (*diskLayer, error) {
 }
 
 // size returns the approximate size of cached nodes in the disk layer.
-func (dl *diskLayer) size() common.StorageSize {
+func (dl *diskLayer) size() (common.StorageSize, common.StorageSize) {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
 
 	if dl.stale {
-		return 0
+		return 0, 0
 	}
-	return common.StorageSize(dl.buffer.size())
+	dirtyNodes, dirtyimmutableNodes := dl.buffer.getSize()
+	return common.StorageSize(dirtyNodes), common.StorageSize(dirtyimmutableNodes)
 }
 
 // resetCache releases the memory held by clean cache to prevent memory leak.
