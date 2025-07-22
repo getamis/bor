@@ -80,14 +80,14 @@ func newFastIterator(db *Database, root common.Hash, account common.Hash, seek c
 					// The state set in the disk layer is mutable, and the entire state becomes stale
 					// if a diff layer above is merged into it. Therefore, staleness must be checked,
 					// and the storage slot should be retrieved with read lock protection.
-					it: newDiffAccountIterator(seek, dl.buffer.states, func(hash common.Hash) ([]byte, error) {
+					it: newDiffAccountIterator(seek, dl.buffer.getStates(), func(hash common.Hash) ([]byte, error) {
 						dl.lock.RLock()
 						defer dl.lock.RUnlock()
 
 						if dl.stale {
 							return nil, errSnapshotStale
 						}
-						return dl.buffer.states.mustAccount(hash)
+						return dl.buffer.getStates().mustAccount(hash)
 					}),
 					priority: depth,
 				})
@@ -110,14 +110,14 @@ func newFastIterator(db *Database, root common.Hash, account common.Hash, seek c
 					// The state set in the disk layer is mutable, and the entire state becomes stale
 					// if a diff layer above is merged into it. Therefore, staleness must be checked,
 					// and the storage slot should be retrieved with read lock protection.
-					it: newDiffStorageIterator(account, seek, dl.buffer.states, func(addrHash common.Hash, slotHash common.Hash) ([]byte, error) {
+					it: newDiffStorageIterator(account, seek, dl.buffer.getStates(), func(addrHash common.Hash, slotHash common.Hash) ([]byte, error) {
 						dl.lock.RLock()
 						defer dl.lock.RUnlock()
 
 						if dl.stale {
 							return nil, errSnapshotStale
 						}
-						return dl.buffer.states.mustStorage(addrHash, slotHash)
+						return dl.buffer.getStates().mustStorage(addrHash, slotHash)
 					}),
 					priority: depth,
 				})
