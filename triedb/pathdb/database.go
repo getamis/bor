@@ -20,8 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/ethereum/go-verkle"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -31,30 +38,40 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-verkle"
 )
 
 const (
 	// defaultCleanSize is the default memory allowance of clean cache.
 	defaultCleanSize = 16 * 1024 * 1024
 
-	// maxBufferSize is the maximum memory allowance of node buffer.
+	// MaxDirtyBufferSize is the maximum memory allowance of node buffer.
 	// Too large buffer will cause the system to pause for a long
 	// time when write happens. Also, the largest batch that pebble can
 	// support is 4GB, node will panic if batch size exceeds this limit.
-	maxBufferSize = 256 * 1024 * 1024
+	MaxDirtyBufferSize = 256 * 1024 * 1024
 
-	// defaultBufferSize is the default memory allowance of node buffer
+	// defaultDirtyBufferSize is the default memory allowance of node buffer
 	// that aggregates the writes from above until it's flushed into the
 	// disk. It's meant to be used once the initial sync is finished.
 	// Do not increase the buffer size arbitrarily, otherwise the system
 	// pause time will increase when the database writes happen.
-	defaultBufferSize = 64 * 1024 * 1024
+	defaultDirtyBufferSize = 64 * 1024 * 1024
+
+	// DefaultBackgroundFlushInterval defines the default the wait interval
+	// that background node cache flush disk.
+	DefaultBackgroundFlushInterval = 3
+)
+
+type JournalType int
+
+const (
+	JournalKVType JournalType = iota
+	JournalFileType
 )
 
 var (
-	// maxDiffLayers is the maximum diff layers allowed in the layer tree.
-	maxDiffLayers = 128
+	// MaxDiffLayers is the maximum diff layers allowed in the layer tree.
+	MaxDiffLayers = 57600
 )
 
 // layer is the interface implemented by all state layers which includes some
@@ -64,10 +81,9 @@ type layer interface {
 	// if the read operation exits abnormally. Specifically, if the layer is
 	// already stale.
 	//
-	// Note:
-	// - the returned node is not a copy, please don't modify it.
-	// - no error will be returned if the requested node is not found in database.
-	node(owner common.Hash, path []byte, depth int) ([]byte, common.Hash, *nodeLoc, error)
+	// Note, no error will be returned if the requested node is not found in database.
+	// Note, the hash parameter can access the diff-layer flat cache to speed up access.
+	node(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error)
 
 	// account directly retrieves the account RLP associated with a particular
 	// hash in the slim data format. An error will be returned if the read
@@ -105,24 +121,28 @@ type layer interface {
 	// journal commits an entire diff hierarchy to disk into a single journal entry.
 	// This is meant to be used during shutdown to persist the layer without
 	// flattening everything down (bad for reorgs).
-	journal(w io.Writer) error
+	journal(w io.Writer, journalType JournalType, eg *errgroup.Group, notify chan<- struct{}) error
 }
 
 // Config contains the settings for database.
 type Config struct {
+	SyncFlush       bool   // Flag of trienodebuffer sync flush cache to disk
 	StateHistory    uint64 // Number of recent blocks to maintain state history for
 	CleanCacheSize  int    // Maximum memory allowance (in bytes) for caching clean nodes
 	WriteBufferSize int    // Maximum memory allowance (in bytes) for write buffer
 	ReadOnly        bool   // Flag whether the database is opened in read only mode.
+	NoTries         bool
+	JournalFilePath string
+	JournalFile     bool
 }
 
 // sanitize checks the provided user configurations and changes anything that's
 // unreasonable or unworkable.
 func (c *Config) sanitize() *Config {
 	conf := *c
-	if conf.WriteBufferSize > maxBufferSize {
-		log.Warn("Sanitizing invalid node buffer size", "provided", common.StorageSize(conf.WriteBufferSize), "updated", common.StorageSize(maxBufferSize))
-		conf.WriteBufferSize = maxBufferSize
+	if conf.WriteBufferSize > MaxDirtyBufferSize {
+		log.Warn("Sanitizing invalid node buffer size", "provided", common.StorageSize(conf.WriteBufferSize), "updated", common.StorageSize(MaxDirtyBufferSize))
+		conf.WriteBufferSize = MaxDirtyBufferSize
 	}
 	return &conf
 }
@@ -143,7 +163,7 @@ func (c *Config) fields() []interface{} {
 var Defaults = &Config{
 	StateHistory:    params.FullImmutabilityThreshold,
 	CleanCacheSize:  defaultCleanSize,
-	WriteBufferSize: defaultBufferSize,
+	WriteBufferSize: defaultDirtyBufferSize,
 }
 
 // ReadOnly is the config in order to open database in read only mode.
@@ -251,6 +271,9 @@ func New(diskdb ethdb.Database, config *Config, isVerkle bool) *Database {
 // repairHistory truncates leftover state history objects, which may occur due
 // to an unclean shutdown or other unexpected reasons.
 func (db *Database) repairHistory() error {
+	if db.config.NoTries {
+		return nil
+	}
 	// Open the freezer for state history. This mechanism ensures that
 	// only one database instance can be opened at a time to prevent
 	// accidental mutation.
@@ -323,7 +346,7 @@ func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint6
 	// - head-1 layer is paired with HEAD-1 state
 	// - head-127 layer(bottom-most diff layer) is paired with HEAD-127 state
 	// - head-128 layer(disk layer) is paired with HEAD-128 state
-	return db.tree.cap(root, maxDiffLayers)
+	return db.tree.cap(root, MaxDiffLayers)
 }
 
 // Commit traverses downwards the layer tree from a specified layer with the
@@ -389,7 +412,7 @@ func (db *Database) Enable(root common.Hash) error {
 	// Drop the stale state journal in persistent database and
 	// reset the persistent state id back to zero.
 	batch := db.diskdb.NewBatch()
-	rawdb.DeleteTrieJournal(batch)
+	db.DeleteTrieJournal(batch)
 	rawdb.WritePersistentStateID(batch, 0)
 	if err := batch.Write(); err != nil {
 		return err
@@ -405,7 +428,7 @@ func (db *Database) Enable(root common.Hash) error {
 	}
 	// Re-construct a new disk layer backed by persistent state
 	// with **empty clean cache and node buffer**.
-	db.tree.reset(newDiskLayer(root, 0, db, nil, newBuffer(db.config.WriteBufferSize, nil, nil, 0)))
+	db.tree.reset(newDiskLayer(root, 0, db, nil, NewTrieNodeBuffer(db.config.SyncFlush, db.config.WriteBufferSize, nil, nil, 0)))
 
 	// Re-enable the database as the final step.
 	db.waitSync = false
@@ -453,7 +476,16 @@ func (db *Database) Recover(root common.Hash) error {
 		// disk layer won't be accessible from outside.
 		db.tree.reset(dl)
 	}
-	rawdb.DeleteTrieJournal(db.diskdb)
+	db.DeleteTrieJournal(db.diskdb)
+
+	// Explicitly sync the key-value store to ensure all recent writes are
+	// flushed to disk. This step is crucial to prevent a scenario where
+	// recent key-value writes are lost due to an application panic, while
+	// the associated state histories have already been removed, resulting
+	// in the inability to perform a state rollback.
+	if err := db.diskdb.Sync(); err != nil {
+		return err
+	}
 	_, err := truncateFromHead(db.diskdb, db.freezer, dl.stateID())
 	if err != nil {
 		return err
@@ -517,16 +549,28 @@ func (db *Database) Close() error {
 
 // Size returns the current storage size of the memory cache in front of the
 // persistent database layer.
-func (db *Database) Size() (diffs common.StorageSize, nodes common.StorageSize) {
+func (db *Database) Size() (diffs common.StorageSize, nodes common.StorageSize, immutableNodes common.StorageSize) {
 	db.tree.forEach(func(layer layer) {
 		if diff, ok := layer.(*diffLayer); ok {
 			diffs += common.StorageSize(diff.size())
 		}
 		if disk, ok := layer.(*diskLayer); ok {
-			nodes += disk.size()
+			nodes, immutableNodes = disk.size()
 		}
 	})
-	return diffs, nodes
+	return diffs, nodes, immutableNodes
+}
+
+// Scheme returns the node scheme used in the database.
+func (db *Database) Scheme() string {
+	return rawdb.PathScheme
+}
+
+// Head return the top non-fork difflayer/disklayer root hash for rewinding.
+func (db *Database) Head() common.Hash {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+	return db.tree.front()
 }
 
 // modifyAllowed returns the indicator if mutation is allowed. This function
@@ -537,6 +581,65 @@ func (db *Database) modifyAllowed() error {
 	}
 	if db.waitSync {
 		return errDatabaseWaitSync
+	}
+	return nil
+}
+
+// GetAllRooHash returns all diffLayer and diskLayer root hash
+func (db *Database) GetAllRooHash() [][]string {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	data := make([][]string, 0, len(db.tree.layers))
+	for _, v := range db.tree.layers {
+		if dl, ok := v.(*diffLayer); ok {
+			data = append(data, []string{fmt.Sprintf("%d", dl.block), dl.rootHash().String()})
+		}
+	}
+	sort.Slice(data, func(i, j int) bool {
+		block1, _ := strconv.Atoi(data[i][0])
+		block2, _ := strconv.Atoi(data[j][0])
+		return block1 > block2
+	})
+
+	data = append(data, []string{"-1", db.tree.bottom().rootHash().String()})
+	return data
+}
+
+// DetermineJournalTypeForWriter is used when persisting the journal. It determines JournalType based on the config passed in by the Config.
+func (db *Database) DetermineJournalTypeForWriter() JournalType {
+	if db.config.JournalFile {
+		return JournalFileType
+	} else {
+		return JournalKVType
+	}
+}
+
+// DetermineJournalTypeForReader is used when loading the journal. It loads based on whether JournalKV or JournalFile currently exists.
+func (db *Database) DetermineJournalTypeForReader() JournalType {
+	if journal := rawdb.ReadTrieJournal(db.diskdb); len(journal) != 0 {
+		return JournalKVType
+	}
+
+	if fileInfo, stateErr := os.Stat(db.config.JournalFilePath); stateErr == nil && !fileInfo.IsDir() {
+		return JournalFileType
+	}
+
+	return JournalKVType
+}
+
+func (db *Database) DeleteTrieJournal(writer ethdb.KeyValueWriter) error {
+	// To prevent any remnants of old journals after converting from JournalKV to JournalFile or vice versa, all deletions must be completed.
+	rawdb.DeleteTrieJournal(writer)
+
+	// delete from journal file, may not exist
+	filePath := db.config.JournalFilePath
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil
+	}
+	errRemove := os.Remove(filePath)
+	if errRemove != nil {
+		log.Crit("Failed to remove tries journal", "journal path", filePath, "err", errRemove)
 	}
 	return nil
 }
