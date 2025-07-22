@@ -54,7 +54,7 @@ func (dl *diskLayer) initBinaryAccountIterator(seek common.Hash) *binaryIterator
 		// The account key list for iteration is deterministic once the iterator
 		// is constructed, no matter the referenced disk layer is stale or not
 		// later.
-		a: newDiffAccountIterator(seek, dl.buffer.states, nil),
+		a: newDiffAccountIterator(seek, dl.buffer.getStates(), nil),
 		b: newDiskAccountIterator(dl.db.diskdb, seek),
 	}
 	l.aDone = !l.a.Next()
@@ -110,7 +110,7 @@ func (dl *diskLayer) initBinaryStorageIterator(account common.Hash, seek common.
 		// The storage key list for iteration is deterministic once the iterator
 		// is constructed, no matter the referenced disk layer is stale or not
 		// later.
-		a: newDiffStorageIterator(account, seek, dl.buffer.states, nil),
+		a: newDiffStorageIterator(account, seek, dl.buffer.getStates(), nil),
 		b: newDiskStorageIterator(dl.db.diskdb, account, seek),
 	}
 	l.aDone = !l.a.Next()

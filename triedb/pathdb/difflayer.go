@@ -18,11 +18,28 @@ package pathdb
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
+
+type HashNodeCache struct{}
+
+func (h *HashNodeCache) Get(hash common.Hash) []byte {
+	return getNodeBlob(hash)
+}
+
+func (h *HashNodeCache) Add(ly layer) {
+	// Should not need to add the cache of the diff layer.
+}
+
+func (h *HashNodeCache) Remove(ly layer) {
+	// Should not need to remove the cache of the diff layer.
+}
 
 // diffLayer represents a collection of modifications made to the in-memory tries
 // along with associated state changes after running a block on top.
@@ -36,7 +53,10 @@ type diffLayer struct {
 	block  uint64              // Associated block number
 	nodes  *nodeSet            // Cached trie nodes indexed by owner and path
 	states *StateSetWithOrigin // Associated state changes along with origin value
+	cache  *HashNodeCache      // trienode cache by hash key. cache is immutable, but cache's item can be add/del.
 
+	// mutables
+	origin *diskLayer   // The current difflayer corresponds to the underlying disklayer and is updated during cap.
 	parent layer        // Parent layer modified by this one, never nil, **can be changed**
 	lock   sync.RWMutex // Lock used to protect parent
 }
@@ -51,10 +71,87 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 		nodes:  nodes,
 		states: states,
 	}
+
+	switch l := parent.(type) {
+	case *diskLayer:
+		dl.origin = l
+		dl.cache = &HashNodeCache{}
+	case *diffLayer:
+		dl.origin = l.originDiskLayer()
+		dl.cache = l.cache
+	default:
+		panic("unknown parent type")
+	}
+
+	err := dl.offloadNodeSetToDB()
+	if err != nil {
+		log.Error("Failed to offload nodeSet to DB", "id", id, "block", block)
+	}
+
+	runtime.SetFinalizer(dl, func(dl *diffLayer) {
+		err := deleteNodeSet(dl.block, dl.root)
+		if err != nil {
+			log.Error("Failed to delete nodeSet", "id", dl.id, "block", dl.block, "root", dl.root.String(), "err", err)
+		}
+	})
+
 	dirtyNodeWriteMeter.Mark(int64(nodes.size))
 	dirtyStateWriteMeter.Mark(int64(states.size))
 	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
 	return dl
+}
+
+func newDiffLayerForJournal(parent layer, root common.Hash, id uint64, block uint64, nodes *nodeSet, states *StateSetWithOrigin, eg *errgroup.Group) *diffLayer {
+	dl := &diffLayer{
+		root:   root,
+		id:     id,
+		block:  block,
+		parent: parent,
+		nodes:  nodes,
+		states: states,
+	}
+
+	switch l := parent.(type) {
+	case *diskLayer:
+		dl.origin = l
+		dl.cache = &HashNodeCache{}
+	case *diffLayer:
+		dl.origin = l.originDiskLayer()
+		dl.cache = l.cache
+	default:
+		panic("unknown parent type")
+	}
+
+	runtime.SetFinalizer(dl, func(dl *diffLayer) {
+		_ = deleteNodeSet(dl.block, dl.root)
+	})
+
+	dirtyNodeWriteMeter.Mark(int64(nodes.size))
+	dirtyStateWriteMeter.Mark(int64(states.size))
+	log.Debug("Created new diff layer", "id", id, "block", block, "nodesize", common.StorageSize(nodes.size), "statesize", common.StorageSize(states.size))
+
+	eg.Go(func() error {
+		err := dl.offloadNodeSetToDB()
+		if err != nil {
+			log.Error("Failed to offload nodeSet to DB", "id", id, "block", block)
+			return err
+		}
+		return nil
+	})
+
+	return dl
+}
+
+func (dl *diffLayer) originDiskLayer() *diskLayer {
+	dl.lock.RLock()
+	defer dl.lock.RUnlock()
+	return dl.origin
+}
+
+func (dl *diffLayer) updateOriginDiskLayer(persistLayer *diskLayer) {
+	dl.lock.Lock()
+	defer dl.lock.Unlock()
+	dl.origin = persistLayer
 }
 
 // rootHash implements the layer interface, returning the root hash of
@@ -79,12 +176,46 @@ func (dl *diffLayer) parentLayer() layer {
 
 // node implements the layer interface, retrieving the trie node blob with the
 // provided node information. No error will be returned if the node is not found.
-func (dl *diffLayer) node(owner common.Hash, path []byte, depth int) ([]byte, common.Hash, *nodeLoc, error) {
+// The hash parameter can access the cache to speed up access.
+func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error) {
+	if hash != (common.Hash{}) {
+		if blob := dl.cache.Get(hash); blob != nil {
+			// The query from the hash map is fastpath,
+			// avoiding recursive query of 128 difflayers.
+			diffHashCacheHitMeter.Mark(1)
+			diffHashCacheReadMeter.Mark(int64(len(blob)))
+			return blob, hash, &nodeLoc{loc: locDiffLayer, depth: depth}, nil
+		}
+	}
+
+	diffHashCacheMissMeter.Mark(1)
+	persistLayer := dl.originDiskLayer()
+	if hash != (common.Hash{}) && persistLayer != nil {
+		blob, rhash, nloc, err := persistLayer.node(owner, path, hash, depth+1)
+		if err != nil || rhash != hash {
+			// This is a bad case with a very low probability.
+			// r/w the difflayer cache and r/w the disklayer are not in the same lock,
+			// so in extreme cases, both reading the difflayer cache and reading the disklayer may fail, eg, disklayer is stale.
+			// In this case, fallback to the original 128-layer recursive difflayer query path.
+			diffHashCacheSlowPathMeter.Mark(1)
+			log.Debug("Retry difflayer due to query origin failed",
+				"owner", owner, "path", path, "query_hash", hash.String(), "return_hash", rhash.String(), "error", err)
+			return dl.intervalNode(owner, path, hash, 0)
+		} else { // This is the fastpath.
+			return blob, rhash, nloc, nil
+		}
+	}
+	diffHashCacheSlowPathMeter.Mark(1)
+	log.Debug("Retry difflayer due to origin is nil or hash is empty",
+		"owner", owner, "path", path, "query_hash", hash.String(), "disk_layer_is_empty", persistLayer == nil)
+	return dl.intervalNode(owner, path, hash, 0)
+}
+
+func (dl *diffLayer) intervalNode(owner common.Hash, path []byte, hash common.Hash, depth int) ([]byte, common.Hash, *nodeLoc, error) {
 	// Hold the lock, ensure the parent won't be changed during the
 	// state accessing.
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
-
 	// If the trie node is known locally, return it
 	n, ok := dl.nodes.node(owner, path)
 	if ok {
@@ -94,7 +225,11 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, depth int) ([]byte, co
 		return n.Blob, n.Hash, &nodeLoc{loc: locDiffLayer, depth: depth}, nil
 	}
 	// Trie node unknown to this layer, resolve from parent
-	return dl.parent.node(owner, path, depth+1)
+	if diff, ok := dl.parent.(*diffLayer); ok {
+		return diff.intervalNode(owner, path, hash, depth+1)
+	}
+	// Failed to resolve through diff layers, fallback to disk layer
+	return dl.parent.node(owner, path, hash, depth+1)
 }
 
 // account directly retrieves the account RLP associated with a particular
@@ -179,6 +314,27 @@ func (dl *diffLayer) persist(force bool) (layer, error) {
 // size returns the approximate memory size occupied by this diff layer.
 func (dl *diffLayer) size() uint64 {
 	return dl.nodes.size + dl.states.size
+}
+
+func (dl *diffLayer) getNodeSetFromDB() error {
+	if dl.nodes.size > 0 {
+		return nil
+	}
+	nodes, err := getNodeSet(dl.block, dl.root)
+	if err != nil {
+		return err
+	}
+	dl.nodes = nodes
+	return nil
+}
+
+func (dl *diffLayer) offloadNodeSetToDB() error {
+	err := setNodeSet(dl.block, dl.root, dl.nodes)
+	if err != nil {
+		return err
+	}
+	dl.nodes.reset()
+	return nil
 }
 
 // diffToDisk merges a bottom-most diff into the persistent disk layer underneath
