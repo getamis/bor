@@ -192,7 +192,10 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, dept
 	persistLayer := dl.originDiskLayer()
 	if hash != (common.Hash{}) && persistLayer != nil {
 		blob, rhash, nloc, err := persistLayer.node(owner, path, hash, depth+1)
-		if err != nil || rhash != hash {
+		if err != nil {
+			return nil, common.Hash{}, nil, err
+		}
+		if rhash != hash {
 			// This is a bad case with a very low probability.
 			// r/w the difflayer cache and r/w the disklayer are not in the same lock,
 			// so in extreme cases, both reading the difflayer cache and reading the disklayer may fail, eg, disklayer is stale.
@@ -200,7 +203,6 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, dept
 			diffHashCacheSlowPathMeter.Mark(1)
 			log.Debug("Retry difflayer due to query origin failed",
 				"owner", owner, "path", path, "query_hash", hash.String(), "return_hash", rhash.String(), "error", err)
-			return dl.intervalNode(owner, path, hash, 0)
 		} else { // This is the fastpath.
 			return blob, rhash, nloc, nil
 		}
