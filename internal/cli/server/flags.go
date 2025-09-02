@@ -1144,6 +1144,12 @@ func (c *Command) Flags(config *Config) *flagset.Flagset {
 		Value:   &c.cliConfig.History.StateHistory,
 		Default: c.cliConfig.History.StateHistory,
 	})
+	f.IntFlag(&flagset.IntFlag{
+		Name:    "maxdifflayers",
+		Usage:   "Maximum number of layers in the diff layer",
+		Value:   &c.cliConfig.History.MaxDiffLayers,
+		Default: c.cliConfig.History.MaxDiffLayers,
+	})
 
 	return f
 }

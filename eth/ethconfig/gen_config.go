@@ -35,6 +35,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		StateHistory                         uint64 `toml:",omitempty"`
 		StateScheme                          string `toml:",omitempty"`
 		JournalFileEnabled                   bool
+		MaxDiffLayers                        int                    `toml:",omitempty"`
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   bool                   `toml:"-"`
 		DatabaseHandles                      int                    `toml:"-"`
@@ -100,6 +101,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.StateHistory = c.StateHistory
 	enc.StateScheme = c.StateScheme
 	enc.JournalFileEnabled = c.JournalFileEnabled
+	enc.MaxDiffLayers = c.MaxDiffLayers
 	enc.RequiredBlocks = c.RequiredBlocks
 	enc.SkipBcVersionCheck = c.SkipBcVersionCheck
 	enc.DatabaseHandles = c.DatabaseHandles
@@ -169,6 +171,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		StateHistory                         *uint64 `toml:",omitempty"`
 		StateScheme                          *string `toml:",omitempty"`
 		JournalFileEnabled                   *bool
+		MaxDiffLayers                        *int                   `toml:",omitempty"`
 		RequiredBlocks                       map[uint64]common.Hash `toml:"-"`
 		SkipBcVersionCheck                   *bool                  `toml:"-"`
 		DatabaseHandles                      *int                   `toml:"-"`
@@ -268,6 +271,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.JournalFileEnabled != nil {
 		c.JournalFileEnabled = *dec.JournalFileEnabled
+	}
+	if dec.MaxDiffLayers != nil {
+		c.MaxDiffLayers = *dec.MaxDiffLayers
 	}
 	if dec.RequiredBlocks != nil {
 		c.RequiredBlocks = dec.RequiredBlocks

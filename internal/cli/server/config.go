@@ -172,6 +172,8 @@ type HistoryConfig struct {
 	// StateHistory denotes number of recent blocks to retain state history for (only relevant
 	// in state.scheme=path)
 	StateHistory uint64 `hcl:"state,block" toml:"state,block"`
+
+	MaxDiffLayers int `hcl:"maxdifflayers,block" toml:"maxdifflayers,block"`
 }
 
 type LoggingConfig struct {
@@ -1220,6 +1222,7 @@ func (c *Config) buildEth(stack *node.Node, accountManager *accounts.Manager) (*
 		n.LogHistory = c.History.LogHistory
 		n.LogNoHistory = c.History.LogNoHistory
 		n.StateHistory = c.History.StateHistory
+		n.MaxDiffLayers = c.History.MaxDiffLayers
 	}
 
 	// LevelDB
