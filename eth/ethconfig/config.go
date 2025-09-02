@@ -119,6 +119,8 @@ type Config struct {
 	StateScheme        string `toml:",omitempty"`
 	JournalFileEnabled bool   // Whether the TrieJournal is stored using journal file
 
+	MaxDiffLayers int `toml:",omitempty"`
+
 	// RequiredBlocks is a set of block number -> hash mappings which must be in the
 	// canonical chain of all remote peers. Setting the option makes geth verify the
 	// presence of these blocks for every new peer connection.
