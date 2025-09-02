@@ -67,6 +67,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	gethversion "github.com/ethereum/go-ethereum/version"
 )
 
@@ -127,6 +128,12 @@ type Ethereum struct {
 // New creates a new Ethereum object (including the initialisation of the common Ethereum object),
 // whose lifecycle will be managed by the provided node.
 func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
+	// Update max diff layers before any pathdb operations
+	if config.MaxDiffLayers != 0 {
+		pathdb.MaxDiffLayers = config.MaxDiffLayers
+		log.Info("Set max diff layers", "layers", pathdb.MaxDiffLayers)
+	}
+
 	// Ensure configuration values are compatible and sane
 	if !config.SyncMode.IsValid() {
 		return nil, fmt.Errorf("invalid sync mode %d", config.SyncMode)
