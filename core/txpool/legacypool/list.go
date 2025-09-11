@@ -713,6 +713,10 @@ func (l *pricedList) Discard(slots int) (types.Transactions, bool) {
 	l.reheapMu.Lock()
 	defer l.reheapMu.Unlock()
 
+	if slots <= 0 {
+		return nil, false
+	}
+
 	drop := make(types.Transactions, 0, slots) // Remote underpriced transactions to drop
 
 	for slots > 0 {
