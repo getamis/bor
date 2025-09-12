@@ -18,6 +18,7 @@ package vm
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -27,7 +28,13 @@ import (
 )
 
 func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
-	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (_ uint64, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("goroutine panicked: %v", r)
+			}
+		}()
+
 		// If we fail the minimum gas availability invariant, fail (0)
 		if contract.Gas <= params.SstoreSentryGasEIP2200 {
 			return 0, errors.New("not enough gas for reentrancy sentry")
